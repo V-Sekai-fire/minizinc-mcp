@@ -48,6 +48,9 @@ defmodule MiniZincMcp.Solver do
   """
   @spec solve_string(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
   def solve_string(model_content, data_content \\ nil, opts \\ []) do
+    # Parse DZN data content if provided
+    parsed_data = if data_content, do: parse_dzn_output(data_content), else: %{}
+
     case Briefly.create(prefix: "minizinc_") do
       {:ok, model_file_base} ->
         # Briefly doesn't add extensions, so we need to add it manually
@@ -59,7 +62,15 @@ defmodule MiniZincMcp.Solver do
             raise "Temporary file was not created: #{model_file}"
           end
           data_file = maybe_create_data_file(data_content)
-          solve(model_file, data_file, opts)
+          case solve(model_file, data_file, opts) do
+            {:ok, solution} ->
+              # Merge parsed input data into solution for reference
+              solution_with_data = Map.merge(solution, %{input_data: parsed_data})
+              {:ok, solution_with_data}
+
+            error ->
+              error
+          end
         rescue
           e -> {:error, "Failed to write temporary file: #{inspect(e)}"}
         end
@@ -222,23 +233,33 @@ defmodule MiniZincMcp.Solver do
               # Prioritize JSON field over text output
               %{"type" => "solution", "json" => json_solution} when is_map(json_solution) ->
                 # Direct JSON solution - preferred format
-                {Map.merge(sol_acc, json_solution), stat_acc, err_acc}
+                # Convert string keys to atoms for consistency, but keep both
+                atom_keys = json_solution |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end) |> Map.new()
+                string_keys = json_solution
+                merged = Map.merge(sol_acc, atom_keys) |> Map.merge(string_keys)
+                {merged, stat_acc, err_acc}
 
               %{"type" => "solution", "json" => json_solution} when is_list(json_solution) ->
                 # JSON solution as list (array of solutions)
                 {Map.merge(sol_acc, %{solutions: json_solution}), stat_acc, err_acc}
 
               %{"type" => "solution", "output" => output_text} ->
-                # output_text can be a string or a map with "default" and "raw" keys
-                # Include the output in the solution for user visibility
-                text = extract_output_text(output_text)
-                parsed = parse_minizinc_output(text)
-                # Build solution map with parsed variables and output information
-                merged =
-                  sol_acc
-                  |> Map.merge(parsed)
-                  |> maybe_put_output(output_text, text)
-                {merged, stat_acc, err_acc}
+                # Only support DZN format output
+                dzn_text = extract_dzn_output(output_text)
+                if dzn_text != "" do
+                  parsed = parse_dzn_output(dzn_text)
+                  # Build solution map with parsed variables and DZN output
+                  merged =
+                    sol_acc
+                    |> Map.merge(parsed)
+                    |> Map.put(:output, output_text)
+                    |> Map.put(:dzn_output, dzn_text)
+                  {merged, stat_acc, err_acc}
+                else
+                  # No DZN output available - return error or empty solution
+                  Logger.warning("Solution has no DZN output format, only: #{inspect(Map.keys(output_text))}")
+                  {sol_acc, stat_acc, err_acc}
+                end
 
               %{"type" => "status", "status" => stat} ->
                 {sol_acc, stat, err_acc}
@@ -272,51 +293,133 @@ defmodule MiniZincMcp.Solver do
     end
   end
 
-  defp extract_output_text(output) when is_binary(output), do: output
-  defp extract_output_text(%{"default" => text}) when is_binary(text), do: text
-  defp extract_output_text(%{"raw" => text}) when is_binary(text), do: text
-  defp extract_output_text(output) when is_map(output) do
-    # Try to get any string value from the map
-    case Enum.find(output, fn {_, v} -> is_binary(v) end) do
-      {_, text} when is_binary(text) -> text
-      _ -> ""
-    end
-  end
-  defp extract_output_text(_), do: ""
+  defp extract_dzn_output(%{"dzn" => text}) when is_binary(text), do: text
+  defp extract_dzn_output(_), do: ""
 
-  defp maybe_put_output(acc, output_text, text) when is_map(output_text) do
-    acc
-    |> Map.put(:output, output_text)
-    |> maybe_put_output_text(text)
-  end
-
-  defp maybe_put_output(acc, _output_text, text), do: maybe_put_output_text(acc, text)
-
-  defp maybe_put_output_text(acc, text) when is_binary(text) and text != "" do
-    Map.put(acc, :output_text, text)
-  end
-
-  defp maybe_put_output_text(acc, _text), do: acc
-
-  defp parse_minizinc_output(output) when is_binary(output) and output != "" do
-    # Parse MiniZinc format: variable_name = value;
-    lines = String.split(output, "\n") |> Enum.filter(&(&1 != ""))
-
-    Enum.reduce(lines, %{}, fn line, acc ->
-      case Regex.run(~r/^(\w+)\s*=\s*([^;]+);/, line) do
-        [_, var_name, value] ->
-          parsed_value = parse_value(value)
-          Map.put(acc, String.to_atom(var_name), parsed_value)
-
-        _ ->
-          acc
+  defp parse_dzn_output(output) when is_binary(output) and output != "" do
+    # Parse complete DZN format
+    # Supports:
+    # - Simple assignments: variable = value;
+    # - Arrays: array = [1, 2, 3];
+    # - Multi-dimensional arrays: array2d = [| 1, 2 | 3, 4 |];
+    # - Sets: set = {1, 2, 3};
+    # - Comments: % comment
+    # - Multi-line values
+    
+    # Remove comments and split into statements
+    statements = extract_dzn_statements(output)
+    
+    Enum.reduce(statements, %{}, fn statement, acc ->
+      case parse_dzn_statement(statement) do
+        {var_name, value} -> Map.put(acc, var_name, value)
+        nil -> acc
       end
     end)
   end
 
-  defp parse_minizinc_output(""), do: %{}
-  defp parse_minizinc_output(nil), do: %{}
-  defp parse_minizinc_output(_), do: %{}
+  defp parse_dzn_output(""), do: %{}
+  defp parse_dzn_output(nil), do: %{}
+  defp parse_dzn_output(_), do: %{}
+
+  defp extract_dzn_statements(output) do
+    # Split by semicolons and filter out comments/empty lines
+    output
+    |> String.split(";")
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&(&1 != ""))
+    |> Enum.map(&remove_comment/1)
+    |> Enum.filter(&(&1 != ""))
+  end
+
+  defp remove_comment(line) do
+    # Remove DZN comments (% ...)
+    case String.split(line, "%", parts: 2) do
+      [code, _comment] -> String.trim(code)
+      [code] -> String.trim(code)
+    end
+  end
+
+  defp parse_dzn_statement(statement) do
+    # Match: variable = value
+    case Regex.run(~r/^(\w+)\s*=\s*(.+)$/, statement) do
+      [_, var_name, value_str] ->
+        value = parse_dzn_value(String.trim(value_str))
+        {String.to_atom(var_name), value}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_dzn_value(value_str) do
+    value_str = String.trim(value_str)
+    
+    cond do
+      # Multi-dimensional array: [| ... |]
+      String.starts_with?(value_str, "[|") and String.ends_with?(value_str, "|]") ->
+        parse_multidim_array(value_str)
+
+      # Regular array: [...]
+      String.starts_with?(value_str, "[") and String.ends_with?(value_str, "]") ->
+        parse_array(value_str)
+
+      # Set: {...}
+      String.starts_with?(value_str, "{") and String.ends_with?(value_str, "}") ->
+        parse_set(value_str)
+
+      # Boolean
+      value_str == "true" -> true
+      value_str == "false" -> false
+
+      # Integer
+      Regex.match?(~r/^-?\d+$/, value_str) -> String.to_integer(value_str)
+
+      # Float
+      Regex.match?(~r/^-?\d+\.\d+$/, value_str) -> String.to_float(value_str)
+
+      # String (quoted)
+      String.starts_with?(value_str, "\"") and String.ends_with?(value_str, "\"") ->
+        String.slice(value_str, 1..-2)
+
+      # Default: return as string
+      true -> value_str
+    end
+  end
+
+  defp parse_multidim_array(array_str) do
+    # Parse [| 1, 2 | 3, 4 |] format
+    # Remove [| and |]
+    content = array_str
+    |> String.slice(2..-3)
+    |> String.trim()
+
+    # Split by | to get rows
+    rows = String.split(content, "|")
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&(&1 != ""))
+
+    Enum.map(rows, fn row ->
+      parse_array("[" <> row <> "]")
+    end)
+  end
+
+  defp parse_set(set_str) do
+    # Parse {1, 2, 3} format
+    content = set_str
+    |> String.slice(1..-2)
+    |> String.trim()
+
+    if content == "" do
+      []
+    else
+      content
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&parse_dzn_value/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+    end
+  end
 
   defp parse_value(value) do
     value = String.trim(value)
@@ -332,12 +435,24 @@ defmodule MiniZincMcp.Solver do
   end
 
   defp parse_array(array_str) do
-    array_str
-    |> String.trim_leading("[")
-    |> String.trim_trailing("]")
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.map(&parse_value/1)
+    # Parse [1, 2, 3] format
+    content = array_str
+    |> String.slice(1..-2)
+    |> String.trim()
+
+    if content == "" do
+      []
+    else
+      content
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&parse_dzn_value/1)
+    end
+  end
+
+  # Legacy parse_value for backward compatibility (now calls parse_dzn_value)
+  defp parse_value(value) do
+    parse_dzn_value(value)
   end
 
   defp parse_solver_list(output) do

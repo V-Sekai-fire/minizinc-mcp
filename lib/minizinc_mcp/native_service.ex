@@ -52,15 +52,15 @@ defmodule MiniZincMcp.NativeService do
         },
         model_content: %{
           type: "string",
-          description: "MiniZinc model content as string (alternative to model_path)"
+          description: "MiniZinc model content (.mzn) as string (alternative to model_path)"
         },
         data_path: %{
           type: "string",
-          description: "Optional path to .dzn data file"
+          description: "Optional path to .dzn data file (alternative to data_content)"
         },
         data_content: %{
           type: "string",
-          description: "Optional .dzn data content as string"
+          description: "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;'). Parsed and included in response."
         },
         solver: %{
           type: "string",
