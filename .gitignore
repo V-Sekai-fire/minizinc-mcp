@@ -67,3 +67,5 @@ rel/
 # Uncomment the next line if you don't want to commit mix.lock
 # mix.lock
 
+# Exception for ex_mcp message_processor fix
+!deps/ex_mcp/lib/ex_mcp/message_processor.ex
