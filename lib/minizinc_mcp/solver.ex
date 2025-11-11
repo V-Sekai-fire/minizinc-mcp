@@ -3,7 +3,7 @@
 
 defmodule MiniZincMcp.Solver do
   @moduledoc """
-  MiniZinc solver using Porcelain to call minizinc command-line tool with JSON output.
+  MiniZinc solver using System.cmd to call minizinc command-line tool with JSON output.
 
   This solver uses the standard MiniZinc command-line interface and parses JSON output.
   No NIFs are required - everything is done via external process communication.
@@ -170,11 +170,10 @@ defmodule MiniZincMcp.Solver do
   """
   @spec available?() :: boolean()
   def available? do
-    result = Porcelain.exec("minizinc", ["--version"], 
-      err: :out, 
-      timeout: 5000
-    )
-    result.status == 0
+    case System.cmd("minizinc", ["--version"], stderr_to_stdout: true, timeout: 5000) do
+      {_output, 0} -> true
+      _ -> false
+    end
   rescue
     _ -> false
   end
@@ -184,26 +183,26 @@ defmodule MiniZincMcp.Solver do
   """
   @spec list_solvers() :: {:ok, [String.t()]} | {:error, String.t()}
   def list_solvers do
-    try do
-      result = Porcelain.exec("minizinc", ["--solvers"], 
-        err: :out,
-        timeout: 5000
-      )
+    task = Task.async(fn ->
+      System.cmd("minizinc", ["--solvers"], stderr_to_stdout: true)
+    end)
 
-      case result.status do
-        0 ->
-          solvers = parse_solver_list(result.out)
-          {:ok, solvers}
+    case Task.yield(task, 5000) || Task.shutdown(task) do
+      {:ok, {output, 0}} ->
+        solvers = parse_solver_list(output)
+        {:ok, solvers}
 
-        _ ->
-          output = result.out || result.err || ""
-          {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
-      end
-    rescue
-      e ->
-        msg = Exception.message(e)
-        {:error, "Error listing solvers: #{msg}"}
+      {:ok, {output, _}} ->
+        {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
+
+      nil ->
+        {:error, "Timeout listing solvers"}
+
+      {:exit, reason} ->
+        {:error, "Process exited: #{inspect(reason)}"}
     end
+  rescue
+    e -> {:error, "Error listing solvers: #{inspect(e)}"}
   end
 
   # Private functions
@@ -211,24 +210,18 @@ defmodule MiniZincMcp.Solver do
   defp build_and_run_command(model_path, data_path, solver, timeout, solver_options) do
     cmd_args = build_command_args(model_path, data_path, solver, solver_options)
 
-    Logger.debug("Running minizinc with args: #{inspect(cmd_args)}, timeout: #{timeout}ms")
+    Logger.debug("Running minizinc with args: #{inspect(cmd_args)}")
 
     try do
-      # Porcelain handles timeouts and process cleanup automatically
-      # Timeout is configurable via tool arguments (default: 60000ms)
-      result = Porcelain.exec("minizinc", cmd_args,
-        err: :out,  # Merge stderr into stdout
-        timeout: timeout
-      )
+      task = Task.async(fn ->
+        System.cmd("minizinc", cmd_args, stderr_to_stdout: true)
+      end)
 
-      output = result.out || ""
-      status = result.status
-
-      case status do
-        0 ->
+      case Task.yield(task, timeout) || Task.shutdown(task) do
+        {:ok, {output, 0}} ->
           parse_json_output(output)
 
-        _ ->
+        {:ok, {output, status}} ->
           # Log full output for debugging
           Logger.debug("MiniZinc returned status #{status}, output: #{inspect(output)}")
           # Try to parse even if status is non-zero (MiniZinc may return solutions with warnings)
@@ -243,12 +236,15 @@ defmodule MiniZincMcp.Solver do
               end
               {:error, "MiniZinc failed with status #{status}:\n#{output_preview}"}
           end
+
+        nil ->
+          {:error, "MiniZinc execution timed out after #{timeout}ms"}
+
+        {:exit, reason} ->
+          {:error, "MiniZinc process exited: #{inspect(reason)}"}
       end
     rescue
-      e ->
-        msg = Exception.message(e)
-        Logger.error("MiniZinc execution error: #{msg}")
-        {:error, "MiniZinc execution error: #{msg}"}
+      e -> {:error, "MiniZinc execution error: #{inspect(e)}"}
     end
   end
 
