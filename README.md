@@ -5,6 +5,7 @@ A Model Context Protocol (MCP) server that provides MiniZinc constraint programm
 ## Features
 
 - Solve MiniZinc models using chuffed solver (fixed, not configurable)
+- Validate MiniZinc models for syntax and type errors without solving
 - Support for both MZN (model) and DZN (data) content as strings
 - Automatic standard library inclusion (e.g., `alldifferent.mzn`) when not present in models
 - Comprehensive output format: Parses DZN format for variable extraction, passthroughs output_text from explicit output statements
@@ -81,13 +82,8 @@ Solve a MiniZinc model using the chuffed solver (fixed, not configurable).
 - `timeout` (integer, optional): Optional timeout in milliseconds (default: no timeout, runs indefinitely)
 - `auto_include_stdlib` (boolean, optional): Automatically include standard MiniZinc libraries (e.g., `alldifferent.mzn`) if not present (default: `true`)
 
-#### Standard Library Support
-
-The `minizinc_solve` tool automatically includes common MiniZinc standard libraries (e.g., `alldifferent.mzn`) 
-if they are not already present in the model (when `auto_include_stdlib` is `true`). This means you can use 
-standard functions like `all_different` without needing to add explicit `include` statements.
-
-#### Output Format
+<details>
+<summary><strong>Output Format Details</strong></summary>
 
 The `minizinc_solve` tool returns solutions as JSON in the following format:
 
@@ -99,7 +95,19 @@ The `minizinc_solve` tool returns solutions as JSON in the following format:
 
 The response is always returned as a JSON string in the MCP content field.
 
-### Examples
+</details>
+
+<details>
+<summary><strong>Standard Library Support</strong></summary>
+
+The `minizinc_solve` tool automatically includes common MiniZinc standard libraries (e.g., `alldifferent.mzn`) 
+if they are not already present in the model (when `auto_include_stdlib` is `true`). This means you can use 
+standard functions like `all_different` without needing to add explicit `include` statements.
+
+</details>
+
+<details>
+<summary><strong>Solve Tool Examples</strong></summary>
 
 **STDIO:**
 
@@ -144,6 +152,88 @@ curl -X POST http://localhost:8081/ \
 }
 ```
 
+</details>
+
+### `minizinc_validate`
+
+Validate a MiniZinc model by checking syntax and type checking without solving. Useful for debugging models before attempting to solve them.
+
+#### Parameters
+
+- `model_content` (string, required): MiniZinc model content (.mzn) as string
+- `data_content` (string, optional): DZN data content as string (e.g., `"n = 8;"`). Must be valid DZN format.
+- `auto_include_stdlib` (boolean, optional): Automatically include standard MiniZinc libraries (e.g., `alldifferent.mzn`) if not present (default: `true`)
+
+#### Response Format
+
+Returns a JSON object with:
+- `valid` (boolean): Whether the model is valid
+- `errors` (array): List of error messages (if any)
+- `warnings` (array): List of warning messages (if any)
+- `message` (string): Human-readable message (when valid)
+- `raw_output` (string): Raw MiniZinc validation output (when invalid)
+
+<details>
+<summary><strong>Validate Tool Examples</strong></summary>
+
+**Validate a valid model:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "minizinc_validate",
+    "arguments": {
+      "model_content": "var int: x; constraint x > 0; solve satisfy;"
+    }
+  }
+}
+```
+
+**Response for valid model:**
+
+```json
+{
+  "valid": true,
+  "errors": [],
+  "warnings": [],
+  "message": "Model is valid"
+}
+```
+
+**Validate a model with syntax errors:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "minizinc_validate",
+    "arguments": {
+      "model_content": "var int: x; constraint x > 0 solve satisfy;"
+    }
+  }
+}
+```
+
+**Response for invalid model:**
+
+```json
+{
+  "valid": false,
+  "errors": [
+    "Error: syntax error, unexpected solve, expecting ';'"
+  ],
+  "warnings": [],
+  "raw_output": "..."
+}
+```
+
+</details>
+
 ## Configuration
 
 **Environment Variables:**
@@ -181,7 +271,8 @@ Current version: **1.0.0-dev1** (see `mix.exs` for latest version)
 - Erlang/OTP 26+
 - MiniZinc 2.9.3+ installed and available in PATH (or use Docker image which includes MiniZinc)
 
-## Development
+<details>
+<summary><strong>Development</strong></summary>
 
 ### Building
 
@@ -214,6 +305,8 @@ For HTTP transport:
 MCP_TRANSPORT=http PORT=8081 mix run --no-halt
 ```
 
+</details>
+
 ## License
 
 MIT License - see LICENSE.md for details.
@@ -221,4 +314,3 @@ MIT License - see LICENSE.md for details.
 ## Copyright
 
 Copyright (c) 2025-present K. S. Ernest (iFire) Lee
-

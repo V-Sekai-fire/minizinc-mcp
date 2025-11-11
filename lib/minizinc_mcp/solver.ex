@@ -183,6 +183,165 @@ defmodule MiniZincMcp.Solver do
     end
   end
 
+  @doc """
+  Validates a MiniZinc model by checking syntax and type checking without solving.
+  
+  ## Parameters
+  
+  - `model_content`: MiniZinc model content as string
+  - `data_content`: Optional DZN data content as string
+  - `opts`: Options keyword list
+    - `:auto_include_stdlib` - Automatically include standard libraries (default: true)
+  
+  ## Returns
+  
+  - `{:ok, validation_result}` - Validation result map containing:
+    - `valid` - Boolean indicating if model is valid
+    - `errors` - List of error messages (if any)
+    - `warnings` - List of warning messages (if any)
+  - `{:error, reason}` - Error reason
+  """
+  @spec validate_string(String.t(), String.t() | nil, keyword()) ::
+          {:ok, map()} | {:error, String.t()}
+  def validate_string(model_content, data_content \\ nil, opts \\ []) do
+    # Add standard library preamble if enabled and not already present
+    auto_include = Keyword.get(opts, :auto_include_stdlib, true)
+    trimmed_model = String.trim_leading(model_content)
+    
+    model_with_preamble =
+      if auto_include, do: add_standard_preamble(trimmed_model), else: trimmed_model
+    
+    case Briefly.create(prefix: "minizinc_") do
+      {:ok, model_file_base} ->
+        model_file = model_file_base <> ".mzn"
+        
+        case File.write(model_file, model_with_preamble) do
+          :ok ->
+            if File.exists?(model_file) do
+              # Create data file if needed
+              case maybe_create_data_file(data_content) do
+                {:ok, created_data_file} ->
+                  data_file = created_data_file
+                  result = validate_model_file(model_file, data_file)
+                  cleanup_file(model_file)
+                  cleanup_file(data_file)
+                  result
+                
+                nil ->
+                  result = validate_model_file(model_file, nil)
+                  cleanup_file(model_file)
+                  result
+                
+                {:error, reason} ->
+                  cleanup_file(model_file)
+                  {:error, "Failed to create data file: #{reason}"}
+              end
+            else
+              cleanup_file(model_file)
+              {:error, "Temporary file was not created: #{model_file}"}
+            end
+          
+          {:error, reason} ->
+            {:error, "Failed to write temporary file: #{inspect(reason)}"}
+        end
+      
+      {:error, reason} ->
+        {:error, "Failed to create temporary file: #{inspect(reason)}"}
+    end
+  end
+  
+  defp validate_model_file(model_file, data_file \\ nil) do
+    # Use --model-check-only flag to validate without solving
+    cmd_args = [
+      "--model-check-only",
+      "--solver", "chuffed",
+      model_file
+    ]
+    
+    # Add data file if provided
+    cmd_args = if data_file && File.exists?(data_file) do
+      cmd_args ++ [data_file]
+    else
+      cmd_args
+    end
+    
+    Logger.debug("Validating minizinc model with args: #{inspect(cmd_args)}")
+    
+    try do
+      {output, exit_status} = System.cmd("minizinc", cmd_args, stderr_to_stdout: true)
+      
+      output_str = String.trim(output)
+      
+      cond do
+        exit_status == 0 ->
+          # Model is valid
+          {:ok, %{
+            "valid" => true,
+            "errors" => [],
+            "warnings" => extract_warnings(output_str),
+            "message" => "Model is valid"
+          }}
+        
+        String.contains?(output_str, "Error:") or String.contains?(output_str, "error:") ->
+          # Parse errors from output
+          errors = extract_validation_errors(output_str)
+          {:ok, %{
+            "valid" => false,
+            "errors" => errors,
+            "warnings" => extract_warnings(output_str),
+            "raw_output" => output_str
+          }}
+        
+        true ->
+          # Unknown error
+          {:ok, %{
+            "valid" => false,
+            "errors" => [output_str],
+            "warnings" => [],
+            "raw_output" => output_str
+          }}
+      end
+    rescue
+      e ->
+        {:error, "Validation error: #{inspect(e)}"}
+    end
+  end
+  
+  defp extract_validation_errors(output) do
+    # Extract error messages from MiniZinc output
+    lines = String.split(output, "\n")
+    
+    errors = 
+      lines
+      |> Enum.filter(fn line ->
+        String.contains?(line, "Error:") or 
+        String.contains?(line, "error:") or
+        String.contains?(line, "syntax error")
+      end)
+      |> Enum.map(&String.trim/1)
+      |> Enum.filter(&(&1 != ""))
+    
+    if errors == [] do
+      # If no specific errors found, return the whole output as error
+      [output]
+    else
+      errors
+    end
+  end
+  
+  defp extract_warnings(output) do
+    # Extract warning messages from MiniZinc output
+    lines = String.split(output, "\n")
+    
+    lines
+    |> Enum.filter(fn line ->
+      String.contains?(line, "Warning:") or 
+      String.contains?(line, "warning:")
+    end)
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&(&1 != ""))
+  end
+
   defp maybe_create_data_file(nil), do: nil
 
   defp maybe_create_data_file(data_content) do

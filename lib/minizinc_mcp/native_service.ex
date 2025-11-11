@@ -110,6 +110,46 @@ defmodule MiniZincMcp.NativeService do
     })
   end
 
+  deftool "minizinc_validate" do
+    meta do
+      name("Validate MiniZinc Model")
+
+      description("""
+      Validates a MiniZinc model by checking syntax and type checking without solving.
+      Useful for debugging models before attempting to solve them.
+      
+      Returns detailed error and warning messages if the model is invalid.
+      """)
+    end
+
+    input_schema(%{
+      type: "object",
+      properties: %{
+        model_content: %{
+          type: "string",
+          description: "MiniZinc model content (.mzn) as string"
+        },
+        data_content: %{
+          type: "string",
+          description:
+            "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;')."
+        },
+        auto_include_stdlib: %{
+          type: "boolean",
+          description:
+            "Automatically include standard MiniZinc libraries (e.g., alldifferent.mzn) if not present (default: true)",
+          default: true
+        }
+      }
+    })
+
+    tool_annotations(%{
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true
+    })
+  end
+
   # Initialize handler
   @impl true
   def handle_initialize(params, state) do
@@ -134,6 +174,9 @@ defmodule MiniZincMcp.NativeService do
     case tool_name do
       "minizinc_solve" ->
         handle_solve(args, state)
+
+      "minizinc_validate" ->
+        handle_validate(args, state)
 
       _ ->
         {:error, "Tool not found: #{tool_name}", state}
@@ -220,6 +263,60 @@ defmodule MiniZincMcp.NativeService do
       kind, reason ->
         # Catch any other thrown values
         error_msg = "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}"
+        {:error, error_msg, state}
+    end
+  end
+
+  defp handle_validate(args, state) do
+    # Ensure args is a map
+    args = if is_map(args), do: args, else: %{}
+
+    model_content = Map.get(args, "model_content")
+    data_content = Map.get(args, "data_content")
+    auto_include_stdlib = Map.get(args, "auto_include_stdlib", true)
+
+    opts = [auto_include_stdlib: auto_include_stdlib]
+
+    try do
+      result =
+        if model_content && model_content != "" do
+          # Validate from string content
+          Solver.validate_string(model_content, data_content, opts)
+        else
+          {:error, "model_content must be provided"}
+        end
+
+      case result do
+        {:ok, validation_result} ->
+          # Ensure all keys are strings for JSON encoding
+          validation_map = normalize_for_json(validation_result)
+          
+          # Encode to JSON
+          case Jason.encode(validation_map) do
+            {:ok, validation_json} ->
+              content_item = %{"type" => "text", "text" => validation_json}
+              response = %{"content" => [content_item]}
+              {:ok, response, state}
+              
+            {:error, encode_error} ->
+              error_msg = "Failed to encode validation result to JSON: #{inspect(encode_error)}"
+              {:error, error_msg, state}
+          end
+
+        {:error, reason} ->
+          error_msg = if is_binary(reason), do: reason, else: to_string(reason)
+          {:error, error_msg, state}
+      end
+    rescue
+      e ->
+        error_msg = "MiniZinc validate error: #{inspect(e)}"
+        {:error, error_msg, state}
+    catch
+      :exit, reason ->
+        error_msg = "MiniZinc validate exited: #{inspect(reason)}"
+        {:error, error_msg, state}
+      kind, reason ->
+        error_msg = "MiniZinc validate error (#{inspect(kind)}): #{inspect(reason)}"
         {:error, error_msg, state}
     end
   end
