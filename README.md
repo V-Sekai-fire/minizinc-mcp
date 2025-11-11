@@ -4,9 +4,9 @@ A Model Context Protocol (MCP) server that provides MiniZinc constraint programm
 
 ## Features
 
-- Convert planning domains to MiniZinc format
-- Convert commands, tasks, and multigoals to MiniZinc
-- Solve MiniZinc models using various solvers
+- Solve MiniZinc models using chuffed solver
+- Support for both MZN (model) and DZN (data) content as strings
+- Output format: Parses DZN format for variable extraction, passthroughs output_text from explicit output statements
 - List available MiniZinc solvers
 - Check MiniZinc availability
 
@@ -69,13 +69,17 @@ docker run -d -p 8081:8081 --name minizinc-mcp minizinc-mcp
 
 The server provides the following MCP tools:
 
-- `minizinc_convert_domain` - Convert a planning domain to MiniZinc
-- `minizinc_convert_command` - Convert a command to MiniZinc
-- `minizinc_convert_task` - Convert a task to MiniZinc
-- `minizinc_convert_multigoal` - Convert a multigoal to MiniZinc
-- `minizinc_solve` - Solve a MiniZinc model
+- `minizinc_solve` - Solve a MiniZinc model (chuffed solver only)
 - `minizinc_list_solvers` - List available solvers
 - `minizinc_check_available` - Check if MiniZinc is available
+
+### Output Format
+
+The `minizinc_solve` tool returns solutions in the following format:
+
+- **DZN format parsing**: When MiniZinc provides DZN format output (models without explicit `output` statements), variables are parsed and returned as structured data (e.g., `{"x": 10, "y": [1, 2, 3]}`)
+- **Output text passthrough**: When models include explicit `output` statements, the output text is passthrough'd in the `output_text` field (e.g., `{"output_text": "x = 10\n"}`)
+- **Both formats**: When both DZN and explicit output are available, both are included in the response
 
 ### Example
 

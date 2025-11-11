@@ -7,6 +7,19 @@ defmodule MiniZincMcp.Solver do
 
   This solver uses the standard MiniZinc command-line interface and parses JSON output.
   No NIFs are required - everything is done via external process communication.
+
+  ## Output Format
+
+  The solver handles two output formats from MiniZinc:
+
+  1. **DZN format**: When MiniZinc provides DZN format output (models without explicit `output` statements),
+     variables are parsed and returned as structured data (e.g., `{"x": 10, "y": [1, 2, 3]}`).
+
+  2. **Output text**: When models include explicit `output` statements, the output text is passthrough'd
+     in the `output_text` field (e.g., `{"output_text": "x = 10\n"}`).
+
+  Only DZN format is parsed for variable extraction. Output text from explicit `output` statements
+  is always included when available, even if DZN format is not present.
   """
 
   require Logger
@@ -26,7 +39,12 @@ defmodule MiniZincMcp.Solver do
 
   ## Returns
 
-  - `{:ok, solution}` - Parsed solution as map with DZN format
+  - `{:ok, solution}` - Solution map containing:
+    - Parsed variables from DZN format (when available)
+    - `output_text` field with explicit output statement text (when available)
+    - `dzn_output` field with raw DZN format text (when available)
+    - `output` field with raw MiniZinc output structure
+    - `input_data` field with parsed input DZN data (when provided)
   - `{:error, reason}` - Error reason
   """
   @spec solve(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
@@ -47,6 +65,16 @@ defmodule MiniZincMcp.Solver do
   Solves MiniZinc model from string content.
 
   Writes the content to a temporary file and solves it.
+
+  ## Parameters
+
+  - `model_content`: MiniZinc model content as string
+  - `data_content`: Optional DZN data content as string (parsed and included in response as `input_data`)
+  - `opts`: Options keyword list (same as solve/3)
+
+  ## Returns
+
+  Same as solve/3. The `input_data` field contains parsed DZN data when `data_content` is provided.
   """
   @spec solve_string(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
   def solve_string(model_content, data_content \\ nil, opts \\ []) do

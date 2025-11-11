@@ -11,8 +11,17 @@ defmodule MiniZincMcp.NativeService do
   - Listing available solvers
   - Checking MiniZinc availability
 
+  ## Output Format
+
   Supports both MZN (model) and DZN (data) content as strings.
-  Output is parsed from DZN format only.
+
+  **Solution Output:**
+  - **DZN format**: When available, variables are parsed from DZN format and returned as structured data
+  - **Output text**: Explicit `output` statements are passthrough'd in the `output_text` field
+  - **Both**: When both formats are available, both are included in the response
+
+  Only DZN format is parsed for variable extraction. Output text from explicit `output` statements
+  is always included when available, even if DZN format is not present.
   """
 
   # Suppress warnings from ex_mcp DSL generated code
@@ -43,7 +52,14 @@ defmodule MiniZincMcp.NativeService do
   deftool "minizinc_solve" do
     meta do
       name("Solve MiniZinc Model")
-      description("Solves a MiniZinc model file or string content")
+      description("""
+      Solves a MiniZinc model file or string content using chuffed solver.
+      
+      Output format:
+      - DZN format: Variables are parsed from DZN format when available (models without explicit output statements)
+      - Output text: Explicit output statements are passthrough'd in output_text field
+      - Both formats are included when available
+      """)
     end
 
     input_schema(%{
