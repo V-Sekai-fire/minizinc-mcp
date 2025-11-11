@@ -7,7 +7,7 @@ defmodule MiniZincMcp.MixProject do
   def project do
     [
       app: :minizinc_mcp,
-      version: "1.0.0-dev1",
+      version: "1.0.0-dev2",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       releases: releases(),

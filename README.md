@@ -263,7 +263,7 @@ Returns a JSON object with:
 
 ## Version
 
-Current version: **1.0.0-dev1** (see `mix.exs` for latest version)
+Current version: **1.0.0-dev2** (see `mix.exs` for latest version)
 
 ## Requirements
 
