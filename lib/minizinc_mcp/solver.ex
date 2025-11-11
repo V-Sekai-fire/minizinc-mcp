@@ -446,7 +446,19 @@ defmodule MiniZincMcp.Solver do
                 |> Map.put(:output_text, output_str)
               {[], nil, {:ok, solution_map}}
             else
-              {[], nil, nil}
+              # No DZN format found, but check if there's any output text
+              # (e.g., from explicit output statements)
+              trimmed_output = String.trim(output_str)
+              if trimmed_output != "" and not String.contains?(trimmed_output, "Error:") do
+                # We have output text but it's not DZN format - return it as output_text
+                solution_map = %{
+                  "output_text" => trimmed_output,
+                  "dzn_output" => ""
+                }
+                {[], nil, {:ok, solution_map}}
+              else
+                {[], nil, nil}
+              end
             end
           end
         end
