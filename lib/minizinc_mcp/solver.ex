@@ -201,9 +201,16 @@ defmodule MiniZincMcp.Solver do
                 {Map.merge(sol_acc, %{solutions: json_solution}), stat_acc, err_acc}
 
               %{"type" => "solution", "output" => output_text} ->
-                # Fallback: parse text output only if JSON not available
-                parsed = parse_minizinc_output(output_text)
-                {Map.merge(sol_acc, parsed), stat_acc, err_acc}
+                # output_text can be a string or a map with "default" and "raw" keys
+                # Include the output in the solution for user visibility
+                text = extract_output_text(output_text)
+                parsed = parse_minizinc_output(text)
+                # Build solution map with parsed variables and output information
+                merged =
+                  sol_acc
+                  |> Map.merge(parsed)
+                  |> maybe_put_output(output_text, text)
+                {merged, stat_acc, err_acc}
 
               %{"type" => "status", "status" => stat} ->
                 {sol_acc, stat, err_acc}
@@ -237,7 +244,33 @@ defmodule MiniZincMcp.Solver do
     end
   end
 
-  defp parse_minizinc_output(output) when is_binary(output) do
+  defp extract_output_text(output) when is_binary(output), do: output
+  defp extract_output_text(%{"default" => text}) when is_binary(text), do: text
+  defp extract_output_text(%{"raw" => text}) when is_binary(text), do: text
+  defp extract_output_text(output) when is_map(output) do
+    # Try to get any string value from the map
+    case Enum.find(output, fn {_, v} -> is_binary(v) end) do
+      {_, text} when is_binary(text) -> text
+      _ -> ""
+    end
+  end
+  defp extract_output_text(_), do: ""
+
+  defp maybe_put_output(acc, output_text, text) when is_map(output_text) do
+    acc
+    |> Map.put(:output, output_text)
+    |> maybe_put_output_text(text)
+  end
+
+  defp maybe_put_output(acc, _output_text, text), do: maybe_put_output_text(acc, text)
+
+  defp maybe_put_output_text(acc, text) when is_binary(text) and text != "" do
+    Map.put(acc, :output_text, text)
+  end
+
+  defp maybe_put_output_text(acc, _text), do: acc
+
+  defp parse_minizinc_output(output) when is_binary(output) and output != "" do
     # Parse MiniZinc format: variable_name = value;
     lines = String.split(output, "\n") |> Enum.filter(&(&1 != ""))
 
@@ -252,6 +285,10 @@ defmodule MiniZincMcp.Solver do
       end
     end)
   end
+
+  defp parse_minizinc_output(""), do: %{}
+  defp parse_minizinc_output(nil), do: %{}
+  defp parse_minizinc_output(_), do: %{}
 
   defp parse_value(value) do
     value = String.trim(value)
