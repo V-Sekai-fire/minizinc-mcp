@@ -39,7 +39,7 @@ defmodule MiniZincMcp.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_mcp, git: "https://github.com/fire/ex_mcp.git", branch: "master"},
+      {:ex_mcp, git: "https://github.com/fire/ex_mcp.git", ref: "f921dc918fca39c96fb7af7b1524d02074edc89a"},
       {:jason, "~> 1.4"},
       {:plug_cowboy, "~> 2.7"},
       {:sourceror, "~> 1.10"},
