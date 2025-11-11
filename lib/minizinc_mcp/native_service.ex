@@ -161,35 +161,79 @@ defmodule MiniZincMcp.NativeService do
 
     opts = [solver: solver, timeout: timeout, auto_include_stdlib: auto_include_stdlib]
 
-    result =
-      cond do
-        model_content && model_content != "" ->
-          # Solve from string content
-          Solver.solve_string(model_content, data_content, opts)
+    try do
+      result =
+        cond do
+          model_content && model_content != "" ->
+            # Solve from string content
+            Solver.solve_string(model_content, data_content, opts)
 
-        model_path && model_path != "" ->
-          # Solve from file
-          Solver.solve(model_path, data_path, opts)
+          model_path && model_path != "" ->
+            # Solve from file
+            Solver.solve(model_path, data_path, opts)
 
-        true ->
-          {:error, "Either model_path or model_content must be provided"}
+          true ->
+            {:error, "Either model_path or model_content must be provided"}
+        end
+
+      case result do
+        {:ok, solution} ->
+          # Ensure all keys are strings for JSON encoding
+          # Recursively convert atom keys to strings
+          solution_map = normalize_for_json(solution)
+          
+          # Encode to JSON, handling encoding errors gracefully
+          case Jason.encode(solution_map) do
+            {:ok, solution_json} ->
+              # Create content item with string keys for JSON compatibility
+              content_item = %{"type" => "text", "text" => solution_json}
+              response = %{"content" => [content_item]}
+              {:ok, response, state}
+              
+            {:error, encode_error} ->
+              # If JSON encoding fails, return error instead of crashing
+              error_msg = "Failed to encode solution to JSON: #{inspect(encode_error)}"
+              {:error, error_msg, state}
+          end
+
+        {:error, reason} ->
+          # Preserve full error message from solver
+          # ex_mcp uses inspect() which will double-encode if reason contains JSON
+          # Ensure reason is a plain string (not JSON) to avoid double encoding
+          error_msg = if is_binary(reason), do: reason, else: to_string(reason)
+          # If error_msg looks like it contains JSON, try to extract and format it properly
+          # to avoid double encoding when ex_mcp calls inspect() on it
+          # ex_mcp uses inspect() which will quote strings, so we need plain text, not JSON
+          final_error_msg = 
+            if String.contains?(error_msg, "\"type\": \"error\"") or 
+               String.contains?(error_msg, "{\"type\":\"error\"") or
+               String.contains?(error_msg, "\"type\":\"error\"") do
+              # Error message contains raw JSON, extract and format it as plain string
+              case extract_and_format_error_from_string(error_msg) do
+                formatted when is_binary(formatted) and formatted != "" -> formatted
+                _ -> 
+                  # Fallback: try to extract from the raw output that might be embedded
+                  # Look for the actual error JSON and format it
+                  extract_error_from_error_message(error_msg)
+              end
+            else
+              error_msg
+            end
+          {:error, final_error_msg, state}
       end
-
-    case result do
-      {:ok, solution} ->
-        # Ensure all keys are strings for JSON encoding
-        # Recursively convert atom keys to strings
-        solution_map = normalize_for_json(solution)
-        solution_json = Jason.encode!(solution_map)
-
-        # Create content item with string keys for JSON compatibility
-        content_item = %{"type" => "text", "text" => solution_json}
-        response = %{"content" => [content_item]}
-        {:ok, response, state}
-
-      {:error, reason} ->
-        # Preserve full error message from solver
-        error_msg = if is_binary(reason), do: reason, else: to_string(reason)
+    rescue
+      e ->
+        # Catch any unexpected exceptions and return as error message
+        error_msg = "MiniZinc solve error: #{inspect(e)}"
+        {:error, error_msg, state}
+    catch
+      :exit, reason ->
+        # Catch exit signals and return as error message
+        error_msg = "MiniZinc solve exited: #{inspect(reason)}"
+        {:error, error_msg, state}
+      kind, reason ->
+        # Catch any other thrown values
+        error_msg = "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}"
         {:error, error_msg, state}
     end
   end
@@ -210,4 +254,89 @@ defmodule MiniZincMcp.NativeService do
   end
 
   defp normalize_for_json(value), do: value
+
+  # Extract and format error from string that may contain JSON
+  # Decode JSON into Elixir terms, then format as plain string (not JSON)
+  defp extract_and_format_error_from_string(error_str) when is_binary(error_str) do
+    # Try to find JSON error objects in the string using parser (no regex)
+    alias MiniZincMcp.Solver
+    
+    # First try to parse the entire string as JSON
+    case Jason.decode(error_str) do
+      {:ok, %{"type" => "error"} = error_json} ->
+        Solver.build_error_message(error_json)
+      _ ->
+        # Try to extract JSON objects from the string
+        json_objects = extract_json_objects_from_string(error_str)
+        
+        Enum.reduce(json_objects, "", fn json_str, acc ->
+          case Jason.decode(json_str) do
+            {:ok, %{"type" => "error"} = error_json} ->
+              error_msg = Solver.build_error_message(error_json)
+              if acc == "", do: error_msg, else: acc <> "\n\n" <> error_msg
+            _ ->
+              acc
+          end
+        end)
+    end
+  end
+
+  defp extract_and_format_error_from_string(_), do: nil
+
+  # Fallback: extract error from error message string that contains JSON
+  defp extract_error_from_error_message(error_msg) when is_binary(error_msg) do
+    # The error message might contain escaped JSON (from inspect() or similar)
+    # Try to extract JSON objects from the error message
+    json_objects = extract_json_objects_from_string(error_msg)
+    
+    # Try to find error JSON and format it
+    result = Enum.reduce(json_objects, nil, fn json_str, acc ->
+      case Jason.decode(json_str) do
+        {:ok, %{"type" => "error"} = error_json} ->
+          # Found error JSON, format it as plain string
+          alias MiniZincMcp.Solver
+          formatted = Solver.build_error_message(error_json)
+          if formatted != "" and formatted != nil, do: formatted, else: acc
+        _ ->
+          acc
+      end
+    end)
+    
+    # If we found a formatted error, return it; otherwise return original
+    if result != nil and result != "" do
+      result
+    else
+      error_msg
+    end
+  end
+
+  defp extract_error_from_error_message(_), do: nil
+
+  # Extract JSON objects from string using parser (no regex)
+  defp extract_json_objects_from_string(text) when is_binary(text) do
+    find_json_objects_in_string(text, 0, [], [])
+  end
+
+  defp find_json_objects_in_string(<<>>, _, _, acc), do: Enum.reverse(acc)
+  
+  defp find_json_objects_in_string(<<"{", rest::binary>>, depth, current, acc) do
+    find_json_objects_in_string(rest, depth + 1, ["{" | current], acc)
+  end
+  
+  defp find_json_objects_in_string(<<"}", rest::binary>>, 1, current, acc) do
+    json_str = Enum.reverse(["}" | current]) |> Enum.join("")
+    find_json_objects_in_string(rest, 0, [], [json_str | acc])
+  end
+  
+  defp find_json_objects_in_string(<<"}", rest::binary>>, depth, current, acc) when depth > 1 do
+    find_json_objects_in_string(rest, depth - 1, ["}" | current], acc)
+  end
+  
+  defp find_json_objects_in_string(<<char, rest::binary>>, depth, current, acc) when depth > 0 do
+    find_json_objects_in_string(rest, depth, [<<char>> | current], acc)
+  end
+  
+  defp find_json_objects_in_string(<<_char, rest::binary>>, 0, _current, acc) do
+    find_json_objects_in_string(rest, 0, [], acc)
+  end
 end

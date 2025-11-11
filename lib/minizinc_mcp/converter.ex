@@ -4,11 +4,11 @@
 defmodule MiniZincMcp.Converter do
   @moduledoc """
   Converts planner elements (actions, tasks, commands, multigoals) to MiniZinc format
-  using Sourceror to parse and transform Elixir AST.
+  using Elixir's Code module to parse and transform Elixir AST.
 
   ## Overview
 
-  This module uses Sourceror to parse Elixir code from planner elements and convert
+  This module uses Elixir's built-in Code module to parse Elixir code from planner elements and convert
   them into MiniZinc constraint programming models. It extracts:
 
   - **Preconditions**: Converted to MiniZinc constraints
@@ -215,7 +215,7 @@ defmodule MiniZincMcp.Converter do
   end
 
   defp convert_command_source(source, module) do
-    ast = Sourceror.parse_string!(source)
+    {:ok, ast} = Code.string_to_quoted(source)
     convert_command_ast(ast)
   rescue
     error ->
@@ -241,7 +241,7 @@ defmodule MiniZincMcp.Converter do
   end
 
   defp convert_task_source(source, module) do
-    ast = Sourceror.parse_string!(source)
+    {:ok, ast} = Code.string_to_quoted(source)
     convert_task_ast(ast)
   rescue
     error ->
@@ -265,7 +265,7 @@ defmodule MiniZincMcp.Converter do
   end
 
   defp convert_multigoal_source(source, module) do
-    ast = Sourceror.parse_string!(source)
+    {:ok, ast} = Code.string_to_quoted(source)
     convert_multigoal_ast(ast)
   rescue
     error ->
@@ -344,7 +344,7 @@ defmodule MiniZincMcp.Converter do
     # Combine into single MiniZinc model
     minizinc = """
     % MiniZinc model for domain: #{domain_name}
-    % Generated from planner elements using Sourceror
+    % Generated from planner elements
 
     % Variable declarations
     #{if variable_declarations != "", do: variable_declarations, else: "% No variables declared"}
@@ -710,14 +710,8 @@ defmodule MiniZincMcp.Converter do
         convert_ast_to_minizinc_constraint(ast)
 
       {:error, _} ->
-        # If parsing fails, try Sourceror
-        case Sourceror.parse_string(normalized) do
-          {:ok, ast} ->
-            convert_ast_to_minizinc_constraint(ast)
-
-          {:error, _} ->
-            "% Precondition (could not parse): #{prec}"
-        end
+        # If parsing fails, return error message
+        "% Precondition (could not parse): #{prec}"
     end
   end
 
@@ -736,14 +730,8 @@ defmodule MiniZincMcp.Converter do
         convert_ast_to_minizinc_effect(ast)
 
       {:error, _} ->
-        # If parsing fails, try Sourceror
-        case Sourceror.parse_string(normalized) do
-          {:ok, ast} ->
-            convert_ast_to_minizinc_effect(ast)
-
-          {:error, _} ->
-            "% Effect (could not parse): #{effect}"
-        end
+        # If parsing fails, return error message
+        "% Effect (could not parse): #{effect}"
     end
   end
 
