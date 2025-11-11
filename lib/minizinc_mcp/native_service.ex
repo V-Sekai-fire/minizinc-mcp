@@ -64,8 +64,9 @@ defmodule MiniZincMcp.NativeService do
         },
         solver: %{
           type: "string",
-          description: "Solver name (default: chuffed)",
-          default: "chuffed"
+          description: "Solver name (only 'chuffed' is supported)",
+          default: "chuffed",
+          enum: ["chuffed"]
         },
         timeout: %{
           type: "integer",
@@ -159,7 +160,9 @@ defmodule MiniZincMcp.NativeService do
     model_content = args["model_content"]
     data_path = args["data_path"]
     data_content = args["data_content"]
-    solver = Map.get(args, "solver", "chuffed")
+    solver_input = Map.get(args, "solver", "chuffed")
+    # Only allow chuffed solver
+    solver = if solver_input == "chuffed", do: "chuffed", else: "chuffed"
     timeout = Map.get(args, "timeout", 60_000)
 
     opts = [solver: solver, timeout: timeout]

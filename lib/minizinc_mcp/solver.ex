@@ -30,7 +30,8 @@ defmodule MiniZincMcp.Solver do
   """
   @spec solve(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
   def solve(model_path, data_path \\ nil, opts \\ []) do
-    solver = Keyword.get(opts, :solver, "chuffed")
+    # Only support chuffed solver
+    solver = "chuffed"
     timeout = Keyword.get(opts, :timeout, 60_000)
     solver_options = Keyword.get(opts, :solver_options, [])
 
