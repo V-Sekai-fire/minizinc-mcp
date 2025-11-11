@@ -21,15 +21,21 @@ defmodule MiniZincMcp.NativeService do
 
   alias MiniZincMcp.Solver
 
-  # Override do_start_link to avoid name registration for temporary instances
-  # The generated start_link calls this, so we override it to prevent conflicts
-  # When no name is provided, start without name registration
+  # Override do_start_link to use unique names for temporary instances
+  # This prevents :already_started errors when ExMCP.MessageProcessor starts multiple instances
   defp do_start_link(:native, opts) do
     name = Keyword.get(opts, :name)
     
-    # If no name provided, start without name registration to avoid conflicts
-    # This allows ExMCP.MessageProcessor to start multiple temporary instances
-    genserver_opts = if name, do: [name: name], else: []
+    # If no name provided, generate a unique name for this temporary instance
+    # This allows multiple instances to coexist without conflicts
+    genserver_opts = 
+      if name do
+        [name: name]
+      else
+        # Generate unique name using make_ref() to avoid conflicts
+        unique_name = {:via, Registry, {ExMCP.ServiceRegistry, {:temp, make_ref()}}}
+        [name: unique_name]
+      end
     
     case GenServer.start_link(__MODULE__, opts, genserver_opts) do
       {:error, {:already_started, pid}} ->
