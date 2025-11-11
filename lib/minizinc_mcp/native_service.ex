@@ -29,10 +29,9 @@ defmodule MiniZincMcp.NativeService do
 
   use ExMCP.Server,
     name: "MiniZinc MCP Server",
-    version: MiniZincMcp.Version.compile_time_version()
+    version: "1.0.0"
 
   alias MiniZincMcp.Solver
-  alias MiniZincMcp.Version
 
   @spec child_spec(term()) :: Supervisor.child_spec()
   def child_spec(opts) do
@@ -156,8 +155,11 @@ defmodule MiniZincMcp.NativeService do
   def handle_initialize(params, state) do
     {:ok,
      %{
-       protocolVersion: Map.get(params, "protocolVersion", Version.protocol_version()),
-       serverInfo: Version.server_info(),
+       protocolVersion: Map.get(params, "protocolVersion", "2025-06-18"),
+       serverInfo: %{
+         name: "MiniZinc MCP Server",
+         version: "1.0.0"
+       },
        capabilities: %{
          tools: %{},
          resources: %{},
