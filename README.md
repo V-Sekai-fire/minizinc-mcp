@@ -1,5 +1,7 @@
 # MiniZinc MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@V-Sekai-fire/minizinc-mcp)](https://smithery.ai/server/@V-Sekai-fire/minizinc-mcp)
+
 A Model Context Protocol (MCP) server that provides MiniZinc constraint programming capabilities.
 
 ## Features
@@ -140,4 +142,3 @@ curl -X POST http://localhost:8081/ \
 ## License
 
 MIT License - see LICENSE.md for details.
-
