@@ -51,7 +51,7 @@ defmodule MiniZincMcp.NativeService do
     meta do
       name("Solve MiniZinc Model")
       description("""
-      Solves a MiniZinc model file or string content using chuffed solver.
+      Solves a MiniZinc model file or string content using chuffed solver (fixed, not configurable).
       
       Output format:
       - DZN format: Variables are parsed from DZN format when available (models without explicit output statements)
@@ -78,12 +78,6 @@ defmodule MiniZincMcp.NativeService do
         data_content: %{
           type: "string",
           description: "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;'). Parsed and included in response."
-        },
-        solver: %{
-          type: "string",
-          description: "Solver name (only 'chuffed' is supported)",
-          default: "chuffed",
-          enum: ["chuffed"]
         },
         timeout: %{
           type: "integer",

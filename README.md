@@ -89,8 +89,7 @@ The `minizinc_solve` tool returns solutions in the following format:
   "params": {
     "name": "minizinc_solve",
     "arguments": {
-      "model_content": "var int: x; constraint x > 0; solve satisfy;",
-      "solver": "chuffed"
+      "model_content": "var int: x; constraint x > 0; solve satisfy;"
     }
   }
 }
@@ -102,7 +101,7 @@ The `minizinc_solve` tool returns solutions in the following format:
 curl -X POST http://localhost:8081/ \
   -H "Content-Type: application/json" \
   -H "mcp-protocol-version: 2025-06-18" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "minizinc_solve", "arguments": {"model_content": "var int: x; constraint x > 0; solve satisfy;", "solver": "chuffed"}}}'
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "minizinc_solve", "arguments": {"model_content": "var int: x; constraint x > 0; solve satisfy;"}}}'
 ```
 
 ## Configuration
