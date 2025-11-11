@@ -28,4 +28,3 @@ defmodule Mix.Tasks.Mcp.Server do
     Process.sleep(:infinity)
   end
 end
-

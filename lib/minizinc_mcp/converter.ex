@@ -214,31 +214,27 @@ defmodule MiniZincMcp.Converter do
   # Private helper functions
 
   defp get_module_source(module) do
-    try do
-      # Try to get the source file path
-      source_file = module.__info__(:compile)[:source]
+    # Try to get the source file path
+    source_file = module.__info__(:compile)[:source]
 
-      if source_file do
-        case File.read(source_file) do
-          {:ok, source} -> {:ok, source}
-          error -> {:error, "Failed to read source file: #{inspect(error)}"}
-        end
-      else
-        {:error, "Could not find source file for module #{inspect(module)}"}
+    if source_file do
+      case File.read(source_file) do
+        {:ok, source} -> {:ok, source}
+        error -> {:error, "Failed to read source file: #{inspect(error)}"}
       end
-    rescue
-      _ -> {:error, "Module #{inspect(module)} does not exist or is not compiled"}
+    else
+      {:error, "Could not find source file for module #{inspect(module)}"}
     end
+  rescue
+    _ -> {:error, "Module #{inspect(module)} does not exist or is not compiled"}
   end
 
   defp convert_command_source(source, module) do
-    try do
-      ast = Sourceror.parse_string!(source)
-      convert_command_ast(ast)
-    rescue
-      error ->
-        {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
-    end
+    ast = Sourceror.parse_string!(source)
+    convert_command_ast(ast)
+  rescue
+    error ->
+      {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
   end
 
   defp convert_command_ast(ast) do
@@ -259,13 +255,11 @@ defmodule MiniZincMcp.Converter do
   end
 
   defp convert_task_source(source, module) do
-    try do
-      ast = Sourceror.parse_string!(source)
-      convert_task_ast(ast)
-    rescue
-      error ->
-        {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
-    end
+    ast = Sourceror.parse_string!(source)
+    convert_task_ast(ast)
+  rescue
+    error ->
+      {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
   end
 
   defp convert_task_ast(ast) do
@@ -284,13 +278,11 @@ defmodule MiniZincMcp.Converter do
   end
 
   defp convert_multigoal_source(source, module) do
-    try do
-      ast = Sourceror.parse_string!(source)
-      convert_multigoal_ast(ast)
-    rescue
-      error ->
-        {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
-    end
+    ast = Sourceror.parse_string!(source)
+    convert_multigoal_ast(ast)
+  rescue
+    error ->
+      {:error, "Failed to parse source for #{inspect(module)}: #{inspect(error)}"}
   end
 
   defp convert_multigoal_ast(ast) do
@@ -317,7 +309,7 @@ defmodule MiniZincMcp.Converter do
     entities = Map.get(domain, :entities, []) || []
 
     domain_name = Map.get(domain, :name, "domain") || Map.get(domain, :domain_type, "domain")
-    
+
     # Convert actions to commands format for processing
     all_commands = commands ++ Enum.map(actions, fn action ->
       %{
@@ -661,7 +653,7 @@ defmodule MiniZincMcp.Converter do
 
   defp generate_command_minizinc_from_map(name, preconditions, effects) do
     # Convert preconditions to MiniZinc constraints
-    constraint_lines = 
+    constraint_lines =
       preconditions
       |> Enum.map(&convert_precondition_to_constraint/1)
       |> Enum.filter(&(&1 != ""))
@@ -706,7 +698,7 @@ defmodule MiniZincMcp.Converter do
   defp convert_precondition_to_constraint(prec) when is_binary(prec) do
     # Try to parse as an expression first
     normalized = normalize_expression_string(prec)
-    
+
     case Code.string_to_quoted(normalized) do
       {:ok, ast} ->
         convert_ast_to_minizinc_constraint(ast)
@@ -732,7 +724,7 @@ defmodule MiniZincMcp.Converter do
   defp convert_effect_to_minizinc(effect) when is_binary(effect) do
     # Try to parse as an expression first
     normalized = normalize_expression_string(effect)
-    
+
     case Code.string_to_quoted(normalized) do
       {:ok, ast} ->
         convert_ast_to_minizinc_effect(ast)
@@ -987,4 +979,3 @@ defmodule MiniZincMcp.Converter do
     "%   predicate: #{inspect(predicate)}"
   end
 end
-

@@ -5,7 +5,7 @@ defmodule MiniZincMcp.NativeService do
   @moduledoc """
   Native BEAM service for MiniZinc MCP using ex_mcp library.
   Provides MiniZinc constraint programming tools via MCP protocol.
-  
+
   This server provides tools for:
   - Solving MiniZinc models
   - Listing available solvers
@@ -26,12 +26,12 @@ defmodule MiniZincMcp.NativeService do
   # MessageProcessor now handles :already_started gracefully
   defp do_start_link(:native, opts) do
     name = Keyword.get(opts, :name)
-    
+
     # Only register name if explicitly provided
     # When ExMCP.MessageProcessor calls start_link([]), no name is provided,
     # so we start without name registration to avoid conflicts
     genserver_opts = if name, do: [name: name], else: []
-    
+
     GenServer.start_link(__MODULE__, opts, genserver_opts)
   end
 
@@ -206,4 +206,3 @@ defmodule MiniZincMcp.NativeService do
     {:ok, %{content: [text(result_json)]}, state}
   end
 end
-

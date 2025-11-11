@@ -98,4 +98,3 @@ defmodule MiniZincMcp.HttpPlugWrapper do
     end
   end
 end
-

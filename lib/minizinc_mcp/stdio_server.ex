@@ -25,4 +25,3 @@ defmodule MiniZincMcp.StdioServer do
     MiniZincMcp.NativeService.start_link(opts ++ [transport: :stdio])
   end
 end
-

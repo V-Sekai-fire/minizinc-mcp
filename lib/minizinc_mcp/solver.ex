@@ -77,28 +77,26 @@ defmodule MiniZincMcp.Solver do
   """
   @spec list_solvers() :: {:ok, [String.t()]} | {:error, String.t()}
   def list_solvers do
-    try do
-      task = Task.async(fn ->
-        System.cmd("minizinc", ["--solvers"], stderr_to_stdout: true)
-      end)
+    task = Task.async(fn ->
+      System.cmd("minizinc", ["--solvers"], stderr_to_stdout: true)
+    end)
 
-      case Task.yield(task, 5000) || Task.shutdown(task) do
-        {:ok, {output, 0}} ->
-          solvers = parse_solver_list(output)
-          {:ok, solvers}
+    case Task.yield(task, 5000) || Task.shutdown(task) do
+      {:ok, {output, 0}} ->
+        solvers = parse_solver_list(output)
+        {:ok, solvers}
 
-        {:ok, {output, _}} ->
-          {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
+      {:ok, {output, _}} ->
+        {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
 
-        nil ->
-          {:error, "Timeout listing solvers"}
+      nil ->
+        {:error, "Timeout listing solvers"}
 
-        {:exit, reason} ->
-          {:error, "Process exited: #{inspect(reason)}"}
-      end
-    rescue
-      e -> {:error, "Error listing solvers: #{inspect(e)}"}
+      {:exit, reason} ->
+        {:error, "Process exited: #{inspect(reason)}"}
     end
+  rescue
+    e -> {:error, "Error listing solvers: #{inspect(e)}"}
   end
 
   # Private functions
@@ -179,7 +177,7 @@ defmodule MiniZincMcp.Solver do
   defp parse_json_output(output) do
     # Handle non-binary output
     output_str = if is_binary(output), do: output, else: inspect(output)
-    
+
     # MiniZinc JSON output is newline-delimited JSON
     # Each line is a JSON object with type: "solution", "status", "error", etc.
     lines = String.split(output_str, "\n") |> Enum.filter(&(&1 != ""))
@@ -301,4 +299,3 @@ defmodule MiniZincMcp.Solver do
     path
   end
 end
-

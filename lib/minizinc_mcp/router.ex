@@ -32,4 +32,3 @@ defmodule MiniZincMcp.Router do
       cors_enabled: true
     ]
 end
-

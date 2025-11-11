@@ -64,4 +64,3 @@ defmodule MiniZincMcp.HttpServer do
   defp parse_host(host) when is_binary(host), do: to_charlist(host)
   defp parse_host(host), do: host
 end
-

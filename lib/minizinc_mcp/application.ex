@@ -71,4 +71,3 @@ defmodule MiniZincMcp.Application do
     end
   end
 end
-
