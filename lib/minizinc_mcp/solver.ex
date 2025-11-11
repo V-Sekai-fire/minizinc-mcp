@@ -193,14 +193,19 @@ defmodule MiniZincMcp.Solver do
         case Jason.decode(line) do
           {:ok, json} ->
             case json do
+              # Prioritize JSON field over text output
+              %{"type" => "solution", "json" => json_solution} when is_map(json_solution) ->
+                # Direct JSON solution - preferred format
+                {Map.merge(sol_acc, json_solution), stat_acc, err_acc}
+
+              %{"type" => "solution", "json" => json_solution} when is_list(json_solution) ->
+                # JSON solution as list (array of solutions)
+                {Map.merge(sol_acc, %{solutions: json_solution}), stat_acc, err_acc}
+
               %{"type" => "solution", "output" => output_text} ->
-                # Parse the output text which contains variable assignments
+                # Fallback: parse text output only if JSON not available
                 parsed = parse_minizinc_output(output_text)
                 {Map.merge(sol_acc, parsed), stat_acc, err_acc}
-
-              %{"type" => "solution", "json" => json_solution} ->
-                # Direct JSON solution
-                {Map.merge(sol_acc, json_solution), stat_acc, err_acc}
 
               %{"type" => "status", "status" => stat} ->
                 {sol_acc, stat, err_acc}
@@ -208,14 +213,19 @@ defmodule MiniZincMcp.Solver do
               %{"type" => "error", "message" => msg} ->
                 {sol_acc, stat_acc, msg}
 
+              %{"type" => "solution"} ->
+                # Solution without json or output field - might have variables directly
+                solution_vars = Map.drop(json, ["type"])
+                {Map.merge(sol_acc, solution_vars), stat_acc, err_acc}
+
               _ ->
                 {sol_acc, stat_acc, err_acc}
             end
 
-          {:error, _} ->
-            # Not JSON, try parsing as MiniZinc format
-            parsed = parse_minizinc_output(line)
-            {Map.merge(sol_acc, parsed), stat_acc, err_acc}
+          {:error, decode_error} ->
+            # If JSON decode fails, log and skip (don't fall back to text parsing)
+            Logger.warning("Failed to parse JSON line: #{inspect(line)} - #{inspect(decode_error)}")
+            {sol_acc, stat_acc, err_acc}
         end
       end)
 

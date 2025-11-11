@@ -5,6 +5,11 @@ defmodule MiniZincMcp.NativeService do
   @moduledoc """
   Native BEAM service for MiniZinc MCP using ex_mcp library.
   Provides MiniZinc constraint programming tools via MCP protocol.
+  
+  This server provides tools for:
+  - Solving MiniZinc models
+  - Listing available solvers
+  - Checking MiniZinc availability
   """
 
   # Suppress warnings from ex_mcp DSL generated code
@@ -15,104 +20,8 @@ defmodule MiniZincMcp.NativeService do
     version: "1.0.0"
 
   alias MiniZincMcp.Solver
-  alias MiniZincMcp.Converter
 
   # Define MiniZinc tools using ex_mcp DSL
-  deftool "minizinc_convert_domain" do
-    meta do
-      name("Convert Domain to MiniZinc")
-      description("Converts a planning domain to MiniZinc format")
-    end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        domain: %{
-          type: "object",
-          description: "Planning domain to convert (map with commands, tasks, multigoals, predicates, entities)"
-        }
-      },
-      required: ["domain"]
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true
-    })
-  end
-
-  deftool "minizinc_convert_command" do
-    meta do
-      name("Convert Command to MiniZinc")
-      description("Converts a command module or map to MiniZinc format")
-    end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        command: %{
-          type: "object",
-          description: "Command to convert (module name as string, or map with name, preconditions, effects)"
-        }
-      },
-      required: ["command"]
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true
-    })
-  end
-
-  deftool "minizinc_convert_task" do
-    meta do
-      name("Convert Task to MiniZinc")
-      description("Converts a task module or map to MiniZinc format")
-    end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        task: %{
-          type: "object",
-          description: "Task to convert (module name as string, or map with name, decomposition)"
-        }
-      },
-      required: ["task"]
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true
-    })
-  end
-
-  deftool "minizinc_convert_multigoal" do
-    meta do
-      name("Convert Multigoal to MiniZinc")
-      description("Converts a multigoal module or map to MiniZinc format")
-    end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        multigoal: %{
-          type: "object",
-          description: "Multigoal to convert (module name as string, or map with name, predicate)"
-        }
-      },
-      required: ["multigoal"]
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true
-    })
-  end
 
   deftool "minizinc_solve" do
     meta do
@@ -217,18 +126,6 @@ defmodule MiniZincMcp.NativeService do
   @impl true
   def handle_tool_call(tool_name, args, state) do
     case tool_name do
-      "minizinc_convert_domain" ->
-        handle_convert_domain(args, state)
-
-      "minizinc_convert_command" ->
-        handle_convert_command(args, state)
-
-      "minizinc_convert_task" ->
-        handle_convert_task(args, state)
-
-      "minizinc_convert_multigoal" ->
-        handle_convert_multigoal(args, state)
-
       "minizinc_solve" ->
         handle_solve(args, state)
 
@@ -240,54 +137,6 @@ defmodule MiniZincMcp.NativeService do
 
       _ ->
         {:error, "Tool not found: #{tool_name}", state}
-    end
-  end
-
-  defp handle_convert_domain(args, state) do
-    domain = args["domain"]
-
-    case Converter.convert_domain(domain) do
-      {:ok, minizinc_code} ->
-        {:ok, %{content: [text(minizinc_code)]}, state}
-
-      {:error, reason} ->
-        {:error, "Failed to convert domain: #{reason}", state}
-    end
-  end
-
-  defp handle_convert_command(args, state) do
-    command = args["command"]
-
-    case Converter.convert_command(command) do
-      {:ok, minizinc_code} ->
-        {:ok, %{content: [text(minizinc_code)]}, state}
-
-      {:error, reason} ->
-        {:error, "Failed to convert command: #{reason}", state}
-    end
-  end
-
-  defp handle_convert_task(args, state) do
-    task = args["task"]
-
-    case Converter.convert_task(task) do
-      {:ok, minizinc_code} ->
-        {:ok, %{content: [text(minizinc_code)]}, state}
-
-      {:error, reason} ->
-        {:error, "Failed to convert task: #{reason}", state}
-    end
-  end
-
-  defp handle_convert_multigoal(args, state) do
-    multigoal = args["multigoal"]
-
-    case Converter.convert_multigoal(multigoal) do
-      {:ok, minizinc_code} ->
-        {:ok, %{content: [text(minizinc_code)]}, state}
-
-      {:error, reason} ->
-        {:error, "Failed to convert multigoal: #{reason}", state}
     end
   end
 

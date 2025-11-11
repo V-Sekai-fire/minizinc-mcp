@@ -18,13 +18,15 @@ defmodule MiniZincMcp.Application do
           port = get_port()
           host = get_host()
 
-          # Start NativeService and HttpServer (which uses Router with health check)
+          # For HTTP transport, don't start NativeService as supervisor child
+          # MessageProcessor will manage server instances per request
+          # Only start HttpServer (which uses Router with health check)
           [
-            {MiniZincMcp.NativeService, [name: MiniZincMcp.NativeService]},
             {MiniZincMcp.HttpServer, [port: port, host: host]}
           ]
 
         :stdio ->
+          # For stdio transport, start NativeService as supervisor child
           [
             {MiniZincMcp.NativeService, [name: MiniZincMcp.NativeService]},
             {MiniZincMcp.StdioServer, []}
