@@ -44,6 +44,7 @@ defmodule MiniZincMcp.MixProject do
       {:plug_cowboy, "~> 2.7"},
       {:sourceror, "~> 1.10"},
       {:briefly, "~> 0.4"},
+      {:porcelain, "~> 2.0"},
       {:dialyxir, "~> 1.4.6", only: [:dev], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

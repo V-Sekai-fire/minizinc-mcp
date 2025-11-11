@@ -166,7 +166,10 @@ defmodule MiniZincMcp.NativeService do
         {:ok, %{content: [text(solution_json)]}, state}
 
       {:error, reason} ->
-        {:error, "Failed to solve model: #{reason}", state}
+        # Preserve full error message from solver for better debugging
+        error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+        Logger.error("MiniZinc solve failed: #{error_msg}")
+        {:error, error_msg, state}
     end
   end
 

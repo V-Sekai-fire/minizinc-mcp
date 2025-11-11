@@ -3,7 +3,7 @@
 
 defmodule MiniZincMcp.Solver do
   @moduledoc """
-  MiniZinc solver using System.cmd to call minizinc command-line tool with JSON output.
+  MiniZinc solver using Porcelain to call minizinc command-line tool with JSON output.
 
   This solver uses the standard MiniZinc command-line interface and parses JSON output.
   No NIFs are required - everything is done via external process communication.
@@ -95,6 +95,8 @@ defmodule MiniZincMcp.Solver do
       {:ok, model_file_base} ->
         # Briefly doesn't add extensions, so we need to add it manually
         model_file = model_file_base <> ".mzn"
+        data_file = nil
+        
         try do
           :ok = File.write!(model_file, model_with_preamble)
           # Verify file exists and is readable
@@ -113,6 +115,10 @@ defmodule MiniZincMcp.Solver do
           end
         rescue
           e -> {:error, "Failed to write temporary file: #{inspect(e)}"}
+        after
+          # Clean up temporary files
+          cleanup_file(model_file)
+          if data_file, do: cleanup_file(data_file)
         end
 
       {:error, reason} ->
@@ -164,10 +170,11 @@ defmodule MiniZincMcp.Solver do
   """
   @spec available?() :: boolean()
   def available? do
-    case System.cmd("minizinc", ["--version"], stderr_to_stdout: true, timeout: 5000) do
-      {_output, 0} -> true
-      _ -> false
-    end
+    result = Porcelain.exec("minizinc", ["--version"], 
+      err: :out, 
+      timeout: 5000
+    )
+    result.status == 0
   rescue
     _ -> false
   end
@@ -177,26 +184,26 @@ defmodule MiniZincMcp.Solver do
   """
   @spec list_solvers() :: {:ok, [String.t()]} | {:error, String.t()}
   def list_solvers do
-    task = Task.async(fn ->
-      System.cmd("minizinc", ["--solvers"], stderr_to_stdout: true)
-    end)
+    try do
+      result = Porcelain.exec("minizinc", ["--solvers"], 
+        err: :out,
+        timeout: 5000
+      )
 
-    case Task.yield(task, 5000) || Task.shutdown(task) do
-      {:ok, {output, 0}} ->
-        solvers = parse_solver_list(output)
-        {:ok, solvers}
+      case result.status do
+        0 ->
+          solvers = parse_solver_list(result.out)
+          {:ok, solvers}
 
-      {:ok, {output, _}} ->
-        {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
-
-      nil ->
-        {:error, "Timeout listing solvers"}
-
-      {:exit, reason} ->
-        {:error, "Process exited: #{inspect(reason)}"}
+        _ ->
+          output = result.out || result.err || ""
+          {:error, "Failed to list solvers: #{String.slice(output, 0, 200)}"}
+      end
+    rescue
+      e ->
+        msg = Exception.message(e)
+        {:error, "Error listing solvers: #{msg}"}
     end
-  rescue
-    e -> {:error, "Error listing solvers: #{inspect(e)}"}
   end
 
   # Private functions
@@ -204,32 +211,44 @@ defmodule MiniZincMcp.Solver do
   defp build_and_run_command(model_path, data_path, solver, timeout, solver_options) do
     cmd_args = build_command_args(model_path, data_path, solver, solver_options)
 
-    Logger.debug("Running minizinc with args: #{inspect(cmd_args)}")
+    Logger.debug("Running minizinc with args: #{inspect(cmd_args)}, timeout: #{timeout}ms")
 
     try do
-      task = Task.async(fn ->
-        System.cmd("minizinc", cmd_args, stderr_to_stdout: true)
-      end)
+      # Porcelain handles timeouts and process cleanup automatically
+      # Timeout is configurable via tool arguments (default: 60000ms)
+      result = Porcelain.exec("minizinc", cmd_args,
+        err: :out,  # Merge stderr into stdout
+        timeout: timeout
+      )
 
-      case Task.yield(task, timeout) || Task.shutdown(task) do
-        {:ok, {output, 0}} ->
+      output = result.out || ""
+      status = result.status
+
+      case status do
+        0 ->
           parse_json_output(output)
 
-        {:ok, {output, status}} ->
+        _ ->
+          # Log full output for debugging
+          Logger.debug("MiniZinc returned status #{status}, output: #{inspect(output)}")
           # Try to parse even if status is non-zero (MiniZinc may return solutions with warnings)
           case parse_json_output(output) do
             {:ok, solution} -> {:ok, solution}
-            _ -> {:error, "MiniZinc failed with status #{status}: #{String.slice(output, 0, 500)}"}
+            _ -> 
+              # Include full output in error message (up to 2000 chars to avoid huge messages)
+              output_preview = if String.length(output) > 2000 do
+                String.slice(output, 0, 2000) <> "\n... (truncated, full output in logs)"
+              else
+                output
+              end
+              {:error, "MiniZinc failed with status #{status}:\n#{output_preview}"}
           end
-
-        nil ->
-          {:error, "MiniZinc execution timed out after #{timeout}ms"}
-
-        {:exit, reason} ->
-          {:error, "MiniZinc process exited: #{inspect(reason)}"}
       end
     rescue
-      e -> {:error, "MiniZinc execution error: #{inspect(e)}"}
+      e ->
+        msg = Exception.message(e)
+        Logger.error("MiniZinc execution error: #{msg}")
+        {:error, "MiniZinc execution error: #{msg}"}
     end
   end
 
@@ -273,6 +292,18 @@ defmodule MiniZincMcp.Solver do
   end
 
   defp add_solver_options(args, _), do: args
+
+  defp cleanup_file(nil), do: :ok
+  defp cleanup_file(file_path) do
+    try do
+      if File.exists?(file_path) do
+        File.rm(file_path)
+        Logger.debug("Cleaned up temporary file: #{file_path}")
+      end
+    rescue
+      e -> Logger.warning("Failed to cleanup file #{file_path}: #{inspect(e)}")
+    end
+  end
 
   defp parse_json_output(output) do
     # Handle non-binary output
@@ -353,11 +384,19 @@ defmodule MiniZincMcp.Solver do
 
     # Return appropriate result
     cond do
-      error -> {:error, error}
-      status in ["UNSATISFIABLE", "UNSAT"] -> {:error, "Problem is unsatisfiable"}
+      error -> 
+        Logger.error("MiniZinc error: #{inspect(error)}")
+        error_msg = if is_binary(error), do: error, else: inspect(error)
+        {:error, error_msg}
+      status in ["UNSATISFIABLE", "UNSAT"] -> 
+        Logger.warning("Problem is unsatisfiable (status: #{inspect(status)})")
+        {:error, "Problem is unsatisfiable"}
       map_size(solution) > 0 -> {:ok, solution}
       status == "OPTIMAL_SOLUTION" or status == "SATISFIED" -> {:ok, %{status: status}}
-      true -> {:ok, %{}}
+      true -> 
+        # If we have no solution and no clear status, log warning
+        Logger.warning("No solution found and no clear status. Solution map: #{inspect(solution)}, Status: #{inspect(status)}")
+        {:error, "No solution found. Status: #{inspect(status)}"}
     end
   end
 
