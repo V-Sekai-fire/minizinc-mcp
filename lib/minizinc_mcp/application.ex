@@ -18,18 +18,10 @@ defmodule MiniZincMcp.Application do
           port = get_port()
           host = get_host()
 
-          # Start NativeService directly with HTTP transport and SSE enabled
+          # Start NativeService and HttpServer (which uses Router with health check)
           [
-            {
-              MiniZincMcp.NativeService,
-              [
-                transport: :http,
-                port: port,
-                host: host,
-                use_sse: true,
-                name: MiniZincMcp.NativeService
-              ]
-            }
+            {MiniZincMcp.NativeService, [name: MiniZincMcp.NativeService]},
+            {MiniZincMcp.HttpServer, [port: port, host: host]}
           ]
 
         :stdio ->

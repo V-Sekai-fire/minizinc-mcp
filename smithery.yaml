@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-present K. S. Ernest (iFire) Lee
+
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+startCommand:
+  type: "http"
+  # Optional: Add configuration schema if needed in the future
+  # configSchema:
+  #   type: "object"
+  #   properties: {}
+  #   required: []
+
