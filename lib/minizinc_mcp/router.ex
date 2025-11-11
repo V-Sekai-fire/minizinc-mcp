@@ -9,6 +9,8 @@ defmodule MiniZincMcp.Router do
 
   use Plug.Router
 
+  alias MiniZincMcp.Version
+
   plug(:match)
   plug(:dispatch)
 
@@ -22,10 +24,7 @@ defmodule MiniZincMcp.Router do
     to: MiniZincMcp.HttpPlugWrapper,
     init_opts: [
       handler: MiniZincMcp.NativeService,
-      server_info: %{
-        name: "MiniZinc MCP Server",
-        version: "1.0.0"
-      },
+      server_info: Version.server_info(),
       # Always enable SSE (never disable), but HttpPlugWrapper will fallback to HTTP if no SSE connection
       # Set MCP_SSE_ENABLED=false to disable SSE entirely (not recommended)
       sse_enabled: System.get_env("MCP_SSE_ENABLED") != "false",
