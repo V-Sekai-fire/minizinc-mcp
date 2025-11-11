@@ -9,9 +9,11 @@ defmodule MiniZincMcp.NativeService do
   This server provides tools for:
   - Solving MiniZinc models (using chuffed solver only)
 
-  ## Output Format
+  ## Input Format
 
-  Supports both MZN (model) and DZN (data) content as strings.
+  Models and data are provided as strings (model_content and data_content).
+
+  ## Output Format
 
   **Solution Output:**
   - **DZN format**: When available, variables are parsed from DZN format and returned as structured data
@@ -63,7 +65,7 @@ defmodule MiniZincMcp.NativeService do
       name("Solve MiniZinc Model")
 
       description("""
-      Solves a MiniZinc model file or string content using chuffed solver (fixed, not configurable).
+      Solves a MiniZinc model using chuffed solver (fixed, not configurable).
 
       Standard libraries: By default, automatically includes common MiniZinc standard libraries (e.g., alldifferent.mzn) 
       if not already present in the model. This can be controlled via the auto_include_stdlib parameter (default: true).
@@ -79,17 +81,9 @@ defmodule MiniZincMcp.NativeService do
     input_schema(%{
       type: "object",
       properties: %{
-        model_path: %{
-          type: "string",
-          description: "Path to .mzn MiniZinc model file (or use model_content for string)"
-        },
         model_content: %{
           type: "string",
-          description: "MiniZinc model content (.mzn) as string (alternative to model_path)"
-        },
-        data_path: %{
-          type: "string",
-          description: "Optional path to .dzn data file (alternative to data_content)"
+          description: "MiniZinc model content (.mzn) as string"
         },
         data_content: %{
           type: "string",
@@ -150,9 +144,7 @@ defmodule MiniZincMcp.NativeService do
     # Ensure args is a map
     args = if is_map(args), do: args, else: %{}
 
-    model_path = Map.get(args, "model_path")
     model_content = Map.get(args, "model_content")
-    data_path = Map.get(args, "data_path")
     data_content = Map.get(args, "data_content")
     # Only allow chuffed solver (ignore user input)
     solver = "chuffed"
@@ -163,17 +155,11 @@ defmodule MiniZincMcp.NativeService do
 
     try do
       result =
-        cond do
-          model_content && model_content != "" ->
-            # Solve from string content
-            Solver.solve_string(model_content, data_content, opts)
-
-          model_path && model_path != "" ->
-            # Solve from file
-            Solver.solve(model_path, data_path, opts)
-
-          true ->
-            {:error, "Either model_path or model_content must be provided"}
+        if model_content && model_content != "" do
+          # Solve from string content
+          Solver.solve_string(model_content, data_content, opts)
+        else
+          {:error, "model_content must be provided"}
         end
 
       case result do

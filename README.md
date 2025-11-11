@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server that provides MiniZinc constraint programm
 ## Features
 
 - Solve MiniZinc models using chuffed solver (fixed, not configurable)
-- Support for both MZN (model) and DZN (data) content as strings or file paths
+- Support for both MZN (model) and DZN (data) content as strings
 - Automatic standard library inclusion (e.g., `alldifferent.mzn`) when not present in models
 - Comprehensive output format: Parses DZN format for variable extraction, passthroughs output_text from explicit output statements
 - JSON-RPC 2.0 protocol support via STDIO or HTTP transports
@@ -76,10 +76,8 @@ Solve a MiniZinc model using the chuffed solver (fixed, not configurable).
 
 #### Parameters
 
-- `model_content` (string, required if `model_path` not provided): MiniZinc model content (.mzn) as string
-- `model_path` (string, required if `model_content` not provided): Path to .mzn MiniZinc model file
+- `model_content` (string, required): MiniZinc model content (.mzn) as string
 - `data_content` (string, optional): DZN data content as string (e.g., `"n = 8;"`). Must be valid DZN format. Parsed and included in response as `input_data` field.
-- `data_path` (string, optional): Path to .dzn data file (alternative to `data_content`)
 - `timeout` (integer, optional): Optional timeout in milliseconds (default: no timeout, runs indefinitely)
 - `auto_include_stdlib` (boolean, optional): Automatically include standard MiniZinc libraries (e.g., `alldifferent.mzn`) if not present (default: `true`)
 
