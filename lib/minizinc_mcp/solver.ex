@@ -587,7 +587,9 @@ defmodule MiniZincMcp.Solver do
     # If no valid JSON lines found, handle plain text output
     # (Without --json-stream, MiniZinc outputs DZN format or plain text)
     {lines, early_error, early_result} =
-      if not has_json do
+      if has_json do
+        {lines, nil, nil}
+      else
         # Try extracting JSON objects from text (for backwards compatibility)
         json_objects = extract_json_objects_from_text(output_str)
 
@@ -644,8 +646,6 @@ defmodule MiniZincMcp.Solver do
           # We found JSON objects, use them
           {json_objects, nil, nil}
         end
-      else
-        {lines, nil, nil}
       end
 
     # If we detected a plain text error or result early, return it immediately
@@ -1197,8 +1197,7 @@ defmodule MiniZincMcp.Solver do
           nil
       end
     end)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.reject(&(&1 == ""))
+    |> Enum.reject(fn x -> is_nil(x) or x == "" end)
     |> Enum.uniq()
   end
 end
