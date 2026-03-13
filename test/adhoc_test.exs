@@ -18,12 +18,13 @@ defmodule AdhocTest do
       {:ok, result} ->
         IO.puts("\n✅ Test passed! Solution found:")
         IO.inspect(result, label: "Result")
-        
+
         # Verify we got a solution
         assert is_map(result)
         # The result should have the variable x or output_text
-        assert Map.has_key?(result, :x) || Map.has_key?(result, :output_text) || Map.has_key?(result, "x")
-        
+        assert Map.has_key?(result, :x) || Map.has_key?(result, :output_text) ||
+                 Map.has_key?(result, "x")
+
       {:error, reason} ->
         IO.puts("\n❌ Test failed with error:")
         IO.inspect(reason)
@@ -49,10 +50,10 @@ defmodule AdhocTest do
       {:ok, result} ->
         IO.puts("\n✅ Test with data passed! Solution found:")
         IO.inspect(result, label: "Result")
-        
+
         # Verify we got a solution
         assert is_map(result)
-        
+
         # Check if input_data was parsed
         if Map.has_key?(result, :input_data) and result.input_data != %{} do
           assert result.input_data["n"] == 5 || result.input_data[:n] == 5
@@ -61,7 +62,7 @@ defmodule AdhocTest do
         else
           IO.puts("ℹ️  Input data not in result (may be parsed differently)")
         end
-        
+
       {:error, reason} ->
         IO.puts("\n❌ Test failed with error:")
         IO.inspect(reason)
@@ -82,9 +83,9 @@ defmodule AdhocTest do
       {:ok, result} ->
         IO.puts("\n✅ Optimization test passed! Solution found:")
         IO.inspect(result, label: "Result")
-        
+
         assert is_map(result)
-        
+
       {:error, reason} ->
         IO.puts("\n❌ Optimization test failed with error:")
         IO.inspect(reason)
@@ -92,4 +93,3 @@ defmodule AdhocTest do
     end
   end
 end
-

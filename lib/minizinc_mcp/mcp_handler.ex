@@ -22,7 +22,11 @@ defmodule MiniZincMcp.MCPHandler do
      %{
        protocolVersion: "2025-06-18",
        serverInfo: %{name: "MiniZinc MCP Server", version: "1.0.0"},
-       capabilities: %{tools: %{listChanged: false}, resources: %{listChanged: false}, prompts: %{listChanged: false}}
+       capabilities: %{
+         tools: %{listChanged: false},
+         resources: %{listChanged: false},
+         prompts: %{listChanged: false}
+       }
      }, state}
   end
 
@@ -31,7 +35,10 @@ defmodule MiniZincMcp.MCPHandler do
     tools =
       MiniZincMcp.NativeService.get_tools()
       |> Map.values()
-      |> Enum.map(fn t -> %{name: t.name, description: t.description, inputSchema: t.input_schema} end)
+      |> Enum.map(fn t ->
+        %{name: t.name, description: t.description, inputSchema: t.input_schema}
+      end)
+
     {:ok, tools, nil, state}
   end
 

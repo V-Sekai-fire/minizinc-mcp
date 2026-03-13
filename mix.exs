@@ -58,4 +58,3 @@ defmodule MiniZincMcp.MixProject do
     ]
   end
 end
-

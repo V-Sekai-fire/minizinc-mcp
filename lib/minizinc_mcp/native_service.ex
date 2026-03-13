@@ -159,16 +159,19 @@ defmodule MiniZincMcp.NativeService do
       case result do
         {:ok, solution} ->
           solution_map = normalize_for_json(solution)
+
           case Jason.encode(solution_map) do
             {:ok, solution_json} ->
               content_item = %{"type" => "text", "text" => solution_json}
               {:ok, %{"content" => [content_item], "isError" => false}, state}
+
             {:error, encode_error} ->
               {:error, "Failed to encode solution to JSON: #{inspect(encode_error)}", state}
           end
 
         {:error, reason} ->
           error_msg = if is_binary(reason), do: reason, else: to_string(reason)
+
           final_error_msg =
             if String.contains?(error_msg, "\"type\": \"error\"") or
                  String.contains?(error_msg, "{\"type\":\"error\"") do
@@ -179,13 +182,17 @@ defmodule MiniZincMcp.NativeService do
             else
               error_msg
             end
+
           {:error, final_error_msg, state}
       end
     rescue
       e -> {:error, "MiniZinc solve error: #{inspect(e)}", state}
     catch
-      :exit, reason -> {:error, "MiniZinc solve exited: #{inspect(reason)}", state}
-      kind, reason -> {:error, "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}", state}
+      :exit, reason ->
+        {:error, "MiniZinc solve exited: #{inspect(reason)}", state}
+
+      kind, reason ->
+        {:error, "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}", state}
     end
   end
 
@@ -207,13 +214,17 @@ defmodule MiniZincMcp.NativeService do
       case result do
         {:ok, validation_result} ->
           validation_map = normalize_for_json(validation_result)
+
           case Jason.encode(validation_map) do
             {:ok, validation_json} ->
               content_item = %{"type" => "text", "text" => validation_json}
               {:ok, %{"content" => [content_item], "isError" => false}, state}
+
             {:error, encode_error} ->
-              {:error, "Failed to encode validation result to JSON: #{inspect(encode_error)}", state}
+              {:error, "Failed to encode validation result to JSON: #{inspect(encode_error)}",
+               state}
           end
+
         {:error, reason} ->
           error_msg = if is_binary(reason), do: reason, else: to_string(reason)
           {:error, error_msg, state}
@@ -221,8 +232,11 @@ defmodule MiniZincMcp.NativeService do
     rescue
       e -> {:error, "MiniZinc validate error: #{inspect(e)}", state}
     catch
-      :exit, reason -> {:error, "MiniZinc validate exited: #{inspect(reason)}", state}
-      kind, reason -> {:error, "MiniZinc validate error (#{inspect(kind)}): #{inspect(reason)}", state}
+      :exit, reason ->
+        {:error, "MiniZinc validate exited: #{inspect(reason)}", state}
+
+      kind, reason ->
+        {:error, "MiniZinc validate error (#{inspect(kind)}): #{inspect(reason)}", state}
     end
   end
 
@@ -232,6 +246,7 @@ defmodule MiniZincMcp.NativeService do
         body = Jason.encode!(%{"solvers" => solvers})
         content = %{"type" => "text", "text" => body}
         {:ok, %{"content" => [content], "isError" => false}, state}
+
       {:error, reason} ->
         msg = if is_binary(reason), do: reason, else: inspect(reason)
         {:error, msg, state}
@@ -252,14 +267,18 @@ defmodule MiniZincMcp.NativeService do
     case Jason.decode(error_str) do
       {:ok, %{"type" => "error"} = error_json} ->
         Solver.build_error_message(error_json)
+
       _ ->
         json_objects = extract_json_objects_from_string(error_str)
+
         Enum.reduce(json_objects, "", fn json_str, acc ->
           case Jason.decode(json_str) do
             {:ok, %{"type" => "error"} = error_json} ->
               msg = Solver.build_error_message(error_json)
               if acc == "", do: msg, else: acc <> "\n\n" <> msg
-            _ -> acc
+
+            _ ->
+              acc
           end
         end)
     end
@@ -269,15 +288,19 @@ defmodule MiniZincMcp.NativeService do
 
   defp extract_error_from_error_message(error_msg) when is_binary(error_msg) do
     json_objects = extract_json_objects_from_string(error_msg)
+
     result =
       Enum.reduce(json_objects, nil, fn json_str, acc ->
         case Jason.decode(json_str) do
           {:ok, %{"type" => "error"} = error_json} ->
             formatted = Solver.build_error_message(error_json)
             if formatted != "" and formatted != nil, do: formatted, else: acc
-          _ -> acc
+
+          _ ->
+            acc
         end
       end)
+
     if result != nil and result != "", do: result, else: error_msg
   end
 

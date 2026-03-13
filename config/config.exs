@@ -5,4 +5,3 @@ import Config
 
 # Configuration for MiniZinc MCP Server
 # This file is read at compile time
-

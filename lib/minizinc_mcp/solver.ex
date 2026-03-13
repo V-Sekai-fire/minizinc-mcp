@@ -111,11 +111,11 @@ defmodule MiniZincMcp.Solver do
                 {:ok, created_data_file} ->
                   data_file = created_data_file
                   result = solve(model_file, data_file, opts)
-                  
+
                   # Clean up temporary files
                   cleanup_file(model_file)
                   cleanup_file(data_file)
-                  
+
                   case result do
                     {:ok, solution} ->
                       # Merge parsed input data into solution for reference
@@ -125,18 +125,18 @@ defmodule MiniZincMcp.Solver do
                     error ->
                       error
                   end
-                  
+
                 {:error, reason} ->
                   cleanup_file(model_file)
                   {:error, "Failed to create data file: #{reason}"}
-                  
+
                 nil ->
                   # No data file needed
                   result = solve(model_file, nil, opts)
-                  
+
                   # Clean up temporary files
                   cleanup_file(model_file)
-                  
+
                   case result do
                     {:ok, solution} ->
                       # Merge parsed input data into solution for reference
@@ -185,16 +185,16 @@ defmodule MiniZincMcp.Solver do
 
   @doc """
   Validates a MiniZinc model by checking syntax and type checking without solving.
-  
+
   ## Parameters
-  
+
   - `model_content`: MiniZinc model content as string
   - `data_content`: Optional DZN data content as string
   - `opts`: Options keyword list
     - `:auto_include_stdlib` - Automatically include standard libraries (default: true)
-  
+
   ## Returns
-  
+
   - `{:ok, validation_result}` - Validation result map containing:
     - `valid` - Boolean indicating if model is valid
     - `errors` - List of error messages (if any)
@@ -207,14 +207,14 @@ defmodule MiniZincMcp.Solver do
     # Add standard library preamble if enabled and not already present
     auto_include = Keyword.get(opts, :auto_include_stdlib, true)
     trimmed_model = String.trim_leading(model_content)
-    
+
     model_with_preamble =
       if auto_include, do: add_standard_preamble(trimmed_model), else: trimmed_model
-    
+
     case Briefly.create(prefix: "minizinc_") do
       {:ok, model_file_base} ->
         model_file = model_file_base <> ".mzn"
-        
+
         case File.write(model_file, model_with_preamble) do
           :ok ->
             if File.exists?(model_file) do
@@ -226,12 +226,12 @@ defmodule MiniZincMcp.Solver do
                   cleanup_file(model_file)
                   cleanup_file(data_file)
                   result
-                
+
                 nil ->
                   result = validate_model_file(model_file, nil)
                   cleanup_file(model_file)
                   result
-                
+
                 {:error, reason} ->
                   cleanup_file(model_file)
                   {:error, "Failed to create data file: #{reason}"}
@@ -240,87 +240,93 @@ defmodule MiniZincMcp.Solver do
               cleanup_file(model_file)
               {:error, "Temporary file was not created: #{model_file}"}
             end
-          
+
           {:error, reason} ->
             {:error, "Failed to write temporary file: #{inspect(reason)}"}
         end
-      
+
       {:error, reason} ->
         {:error, "Failed to create temporary file: #{inspect(reason)}"}
     end
   end
-  
+
   defp validate_model_file(model_file, data_file \\ nil) do
     # Use --model-check-only flag to validate without solving
     cmd_args = [
       "--model-check-only",
-      "--solver", "highs",
+      "--solver",
+      "highs",
       model_file
     ]
-    
+
     # Add data file if provided
-    cmd_args = if data_file && File.exists?(data_file) do
-      cmd_args ++ [data_file]
-    else
-      cmd_args
-    end
-    
+    cmd_args =
+      if data_file && File.exists?(data_file) do
+        cmd_args ++ [data_file]
+      else
+        cmd_args
+      end
+
     Logger.debug("Validating minizinc model with args: #{inspect(cmd_args)}")
-    
+
     try do
       {output, exit_status} = System.cmd("minizinc", cmd_args, stderr_to_stdout: true)
-      
+
       output_str = String.trim(output)
-      
+
       cond do
         exit_status == 0 ->
           # Model is valid
-          {:ok, %{
-            "valid" => true,
-            "errors" => [],
-            "warnings" => extract_warnings(output_str),
-            "message" => "Model is valid"
-          }}
-        
+          {:ok,
+           %{
+             "valid" => true,
+             "errors" => [],
+             "warnings" => extract_warnings(output_str),
+             "message" => "Model is valid"
+           }}
+
         String.contains?(output_str, "Error:") or String.contains?(output_str, "error:") ->
           # Parse errors from output
           errors = extract_validation_errors(output_str)
-          {:ok, %{
-            "valid" => false,
-            "errors" => errors,
-            "warnings" => extract_warnings(output_str),
-            "raw_output" => output_str
-          }}
-        
+
+          {:ok,
+           %{
+             "valid" => false,
+             "errors" => errors,
+             "warnings" => extract_warnings(output_str),
+             "raw_output" => output_str
+           }}
+
         true ->
           # Unknown error
-          {:ok, %{
-            "valid" => false,
-            "errors" => [output_str],
-            "warnings" => [],
-            "raw_output" => output_str
-          }}
+          {:ok,
+           %{
+             "valid" => false,
+             "errors" => [output_str],
+             "warnings" => [],
+             "raw_output" => output_str
+           }}
       end
     rescue
       e ->
         {:error, "Validation error: #{inspect(e)}"}
     end
   end
-  
+
   defp extract_validation_errors(output) do
     # Extract error messages from MiniZinc output
     lines = String.split(output, "\n")
-    
-    errors = 
+
+    errors =
       lines
       |> Enum.filter(fn line ->
-        String.contains?(line, "Error:") or 
-        String.contains?(line, "error:") or
-        String.contains?(line, "syntax error")
+        String.contains?(line, "Error:") or
+          String.contains?(line, "error:") or
+          String.contains?(line, "syntax error")
       end)
       |> Enum.map(&String.trim/1)
       |> Enum.filter(&(&1 != ""))
-    
+
     if errors == [] do
       # If no specific errors found, return the whole output as error
       [output]
@@ -328,15 +334,15 @@ defmodule MiniZincMcp.Solver do
       errors
     end
   end
-  
+
   defp extract_warnings(output) do
     # Extract warning messages from MiniZinc output
     lines = String.split(output, "\n")
-    
+
     lines
     |> Enum.filter(fn line ->
-      String.contains?(line, "Warning:") or 
-      String.contains?(line, "warning:")
+      String.contains?(line, "Warning:") or
+        String.contains?(line, "warning:")
     end)
     |> Enum.map(&String.trim/1)
     |> Enum.filter(&(&1 != ""))
@@ -349,7 +355,7 @@ defmodule MiniZincMcp.Solver do
       {:ok, data_file_base} ->
         # Briefly doesn't add extensions, so we need to add it manually
         data_file = data_file_base <> ".dzn"
-        
+
         case File.write(data_file, data_content) do
           :ok ->
             # Verify file exists
@@ -445,6 +451,7 @@ defmodule MiniZincMcp.Solver do
                 status when status in ["UNSATISFIABLE", "UNSAT"] ->
                   # These are valid results, not errors
                   {:ok, solution}
+
                 _ ->
                   {:ok, solution}
               end
@@ -452,20 +459,18 @@ defmodule MiniZincMcp.Solver do
             {:error, error_msg} ->
               # parse_output found a MiniZinc error and formatted it
               # Return the formatted error message directly (already plain string, not JSON)
-              Logger.error(
-                "MiniZinc error (exit status #{exit_status}): #{error_msg}"
-              )
+              Logger.error("MiniZinc error (exit status #{exit_status}): #{error_msg}")
               {:error, error_msg}
 
             other ->
               # Unexpected return from parse_output
               # Check what was actually returned and handle it appropriately
               Logger.error("Unexpected return from parse_output: #{inspect(other)}")
-              
+
               # Try to extract error from raw output and format it as plain string (no JSON)
               # This avoids including raw JSON in error messages
               formatted_error = extract_error_from_raw_output(output)
-              
+
               # If it's actually an ok tuple, return it
               case other do
                 {:ok, result} when is_map(result) ->
@@ -474,6 +479,7 @@ defmodule MiniZincMcp.Solver do
                     nil -> {:ok, result}
                     status -> {:ok, result}
                   end
+
                 _ ->
                   # Not a recognized format
                   # If we extracted a formatted error, use it; otherwise return simple error
@@ -565,70 +571,83 @@ defmodule MiniZincMcp.Solver do
     # 2. DZN format (without --json-stream): "x = 9;\n----------\n"
     # 3. Plain text errors: "/path/file.mzn:line.col:\nError: message"
     # 4. Status messages: "=====UNSATISFIABLE====="
-    
+
     # First try simple line-by-line parsing (most common case for JSON)
     lines = String.split(output_str, "\n") |> Enum.filter(&(&1 != ""))
-    
+
     # Check if any line contains valid JSON
-    has_json = Enum.any?(lines, fn line ->
-      case Jason.decode(line) do
-        {:ok, _} -> true
-        _ -> false
-      end
-    end)
-    
+    has_json =
+      Enum.any?(lines, fn line ->
+        case Jason.decode(line) do
+          {:ok, _} -> true
+          _ -> false
+        end
+      end)
+
     # If no valid JSON lines found, handle plain text output
     # (Without --json-stream, MiniZinc outputs DZN format or plain text)
-    {lines, early_error, early_result} = if not has_json do
-      # Try extracting JSON objects from text (for backwards compatibility)
-      json_objects = extract_json_objects_from_text(output_str)
-      
-      # If still no JSON found, check for plain text output (DZN or errors)
-      if json_objects == [] do
-        # Check for plain text errors first
-        plain_text_error = extract_error_from_raw_output(output_str)
-        if plain_text_error != "" and plain_text_error != nil do
-          {[], {:error, plain_text_error}, nil}
-        else
-          # Check for DZN format output or UNSATISFIABLE status
-          # DZN format: "x = 9;\n----------" or similar
-          # UNSATISFIABLE: "=====UNSATISFIABLE====="
-          if String.contains?(output_str, "=====UNSATISFIABLE=====") do
-            {[], nil, {:ok, %{"status" => "UNSATISFIABLE", "message" => "Problem is unsatisfiable - no solution exists"}}}
+    {lines, early_error, early_result} =
+      if not has_json do
+        # Try extracting JSON objects from text (for backwards compatibility)
+        json_objects = extract_json_objects_from_text(output_str)
+
+        # If still no JSON found, check for plain text output (DZN or errors)
+        if json_objects == [] do
+          # Check for plain text errors first
+          plain_text_error = extract_error_from_raw_output(output_str)
+
+          if plain_text_error != "" and plain_text_error != nil do
+            {[], {:error, plain_text_error}, nil}
           else
-            # Try to parse as DZN format
-            dzn_parsed = parse_dzn_output(output_str)
-            if map_size(dzn_parsed) > 0 do
-              # Found DZN solution
-              solution_map = dzn_parsed
-                |> Map.put(:dzn_output, output_str)
-                |> Map.put(:output_text, output_str)
-              {[], nil, {:ok, solution_map}}
+            # Check for DZN format output or UNSATISFIABLE status
+            # DZN format: "x = 9;\n----------" or similar
+            # UNSATISFIABLE: "=====UNSATISFIABLE====="
+            if String.contains?(output_str, "=====UNSATISFIABLE=====") do
+              {[], nil,
+               {:ok,
+                %{
+                  "status" => "UNSATISFIABLE",
+                  "message" => "Problem is unsatisfiable - no solution exists"
+                }}}
             else
-              # No DZN format found, but check if there's any output text
-              # (e.g., from explicit output statements)
-              trimmed_output = String.trim(output_str)
-              if trimmed_output != "" and not String.contains?(trimmed_output, "Error:") do
-                # We have output text but it's not DZN format - return it as output_text
-                solution_map = %{
-                  "output_text" => trimmed_output,
-                  "dzn_output" => ""
-                }
+              # Try to parse as DZN format
+              dzn_parsed = parse_dzn_output(output_str)
+
+              if map_size(dzn_parsed) > 0 do
+                # Found DZN solution
+                solution_map =
+                  dzn_parsed
+                  |> Map.put(:dzn_output, output_str)
+                  |> Map.put(:output_text, output_str)
+
                 {[], nil, {:ok, solution_map}}
               else
-                {[], nil, nil}
+                # No DZN format found, but check if there's any output text
+                # (e.g., from explicit output statements)
+                trimmed_output = String.trim(output_str)
+
+                if trimmed_output != "" and not String.contains?(trimmed_output, "Error:") do
+                  # We have output text but it's not DZN format - return it as output_text
+                  solution_map = %{
+                    "output_text" => trimmed_output,
+                    "dzn_output" => ""
+                  }
+
+                  {[], nil, {:ok, solution_map}}
+                else
+                  {[], nil, nil}
+                end
               end
             end
           end
+        else
+          # We found JSON objects, use them
+          {json_objects, nil, nil}
         end
       else
-        # We found JSON objects, use them
-        {json_objects, nil, nil}
+        {lines, nil, nil}
       end
-    else
-      {lines, nil, nil}
-    end
-    
+
     # If we detected a plain text error or result early, return it immediately
     if early_error != nil do
       early_error
@@ -636,141 +655,153 @@ defmodule MiniZincMcp.Solver do
       if early_result != nil do
         early_result
       else
-      # Continue with JSON parsing
-      solution = %{}
-      status = nil
-      error = nil
+        # Continue with JSON parsing
+        solution = %{}
+        status = nil
+        error = nil
 
-      {solution, status, error} =
-        Enum.reduce(lines, {solution, status, error}, fn line, {sol_acc, stat_acc, err_acc} ->
-          case Jason.decode(line) do
-          {:ok, json} ->
-            case json do
-              # Prioritize JSON field over text output
-              %{"type" => "solution", "json" => json_solution} when is_map(json_solution) ->
-                # Direct JSON solution - preferred format
-                # Convert string keys to atoms for consistency, but keep both
-                atom_keys =
-                  json_solution |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end) |> Map.new()
+        {solution, status, error} =
+          Enum.reduce(lines, {solution, status, error}, fn line, {sol_acc, stat_acc, err_acc} ->
+            case Jason.decode(line) do
+              {:ok, json} ->
+                case json do
+                  # Prioritize JSON field over text output
+                  %{"type" => "solution", "json" => json_solution} when is_map(json_solution) ->
+                    # Direct JSON solution - preferred format
+                    # Convert string keys to atoms for consistency, but keep both
+                    atom_keys =
+                      json_solution
+                      |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
+                      |> Map.new()
 
-                string_keys = json_solution
-                merged = Map.merge(sol_acc, atom_keys) |> Map.merge(string_keys)
-                {merged, stat_acc, err_acc}
+                    string_keys = json_solution
+                    merged = Map.merge(sol_acc, atom_keys) |> Map.merge(string_keys)
+                    {merged, stat_acc, err_acc}
 
-              %{"type" => "solution", "json" => json_solution} when is_list(json_solution) ->
-                # JSON solution as list (array of solutions)
-                {Map.merge(sol_acc, %{solutions: json_solution}), stat_acc, err_acc}
+                  %{"type" => "solution", "json" => json_solution} when is_list(json_solution) ->
+                    # JSON solution as list (array of solutions)
+                    {Map.merge(sol_acc, %{solutions: json_solution}), stat_acc, err_acc}
 
-              %{"type" => "solution", "output" => output_text} ->
-                # Only parse DZN format, but passthrough all output text
-                dzn_text = extract_dzn_output(output_text)
-                output_text_str = extract_output_text_for_passthrough(output_text)
+                  %{"type" => "solution", "output" => output_text} ->
+                    # Only parse DZN format, but passthrough all output text
+                    dzn_text = extract_dzn_output(output_text)
+                    output_text_str = extract_output_text_for_passthrough(output_text)
 
-                if dzn_text != "" do
-                  parsed = parse_dzn_output(dzn_text)
-                  # Build solution map with parsed variables and DZN output
-                  merged =
-                    sol_acc
-                    |> Map.merge(parsed)
-                    |> Map.put(:output, output_text)
-                    |> Map.put(:dzn_output, dzn_text)
-                    |> maybe_put_output_text(output_text_str)
+                    if dzn_text != "" do
+                      parsed = parse_dzn_output(dzn_text)
+                      # Build solution map with parsed variables and DZN output
+                      merged =
+                        sol_acc
+                        |> Map.merge(parsed)
+                        |> Map.put(:output, output_text)
+                        |> Map.put(:dzn_output, dzn_text)
+                        |> maybe_put_output_text(output_text_str)
 
-                  {merged, stat_acc, err_acc}
-                else
-                  # No DZN output available - passthrough output text without parsing
-                  Logger.warning(
-                    "Solution has no DZN output format, only: #{inspect(Map.keys(output_text))}"
-                  )
+                      {merged, stat_acc, err_acc}
+                    else
+                      # No DZN output available - passthrough output text without parsing
+                      Logger.warning(
+                        "Solution has no DZN output format, only: #{inspect(Map.keys(output_text))}"
+                      )
 
-                  merged =
-                    sol_acc
-                    |> Map.put(:output, output_text)
-                    |> maybe_put_output_text(output_text_str)
+                      merged =
+                        sol_acc
+                        |> Map.put(:output, output_text)
+                        |> maybe_put_output_text(output_text_str)
 
-                  {merged, stat_acc, err_acc}
+                      {merged, stat_acc, err_acc}
+                    end
+
+                  %{"type" => "status", "status" => stat} ->
+                    {sol_acc, stat, err_acc}
+
+                  %{"type" => "error"} = error_json ->
+                    # Extract all error details for debugging
+                    # MiniZinc error JSON can have: message, what, location, etc.
+                    error_details = build_error_message(error_json)
+
+                    Logger.debug(
+                      "Found MiniZinc error JSON: #{inspect(error_json)}, formatted: #{inspect(error_details)}"
+                    )
+
+                    {sol_acc, stat_acc, error_details}
+
+                  %{"type" => "solution"} ->
+                    # Solution without json or output field - might have variables directly
+                    solution_vars = Map.drop(json, ["type"])
+                    {Map.merge(sol_acc, solution_vars), stat_acc, err_acc}
+
+                  _ ->
+                    {sol_acc, stat_acc, err_acc}
                 end
 
-              %{"type" => "status", "status" => stat} ->
-                {sol_acc, stat, err_acc}
+              {:error, decode_error} ->
+                # If JSON decode fails, log and skip (don't fall back to text parsing)
+                Logger.warning(
+                  "Failed to parse JSON line: #{inspect(line)} - #{inspect(decode_error)}"
+                )
 
-              %{"type" => "error"} = error_json ->
-                # Extract all error details for debugging
-                # MiniZinc error JSON can have: message, what, location, etc.
-                error_details = build_error_message(error_json)
-                Logger.debug("Found MiniZinc error JSON: #{inspect(error_json)}, formatted: #{inspect(error_details)}")
-                {sol_acc, stat_acc, error_details}
-
-              %{"type" => "solution"} ->
-                # Solution without json or output field - might have variables directly
-                solution_vars = Map.drop(json, ["type"])
-                {Map.merge(sol_acc, solution_vars), stat_acc, err_acc}
-
-              _ ->
                 {sol_acc, stat_acc, err_acc}
             end
+          end)
 
-          {:error, decode_error} ->
-            # If JSON decode fails, log and skip (don't fall back to text parsing)
-            Logger.warning(
-              "Failed to parse JSON line: #{inspect(line)} - #{inspect(decode_error)}"
-            )
+        # Return appropriate result
+        # ALWAYS prioritize errors - if an error was found, return it immediately
+        Logger.debug(
+          "parse_output result: error=#{inspect(error)}, error_is_binary=#{is_binary(error)}, status=#{inspect(status)}, solution_size=#{map_size(solution)}"
+        )
 
-            {sol_acc, stat_acc, err_acc}
-          end
-        end)
+        cond do
+          error != nil && error != "" ->
+            Logger.error("MiniZinc error: #{inspect(error)}")
+            # Error is already formatted by build_error_message, but ensure it's a string
+            error_msg = if is_binary(error), do: error, else: inspect(error)
+            {:error, error_msg}
 
-      # Return appropriate result
-      # ALWAYS prioritize errors - if an error was found, return it immediately
-      Logger.debug("parse_output result: error=#{inspect(error)}, error_is_binary=#{is_binary(error)}, status=#{inspect(status)}, solution_size=#{map_size(solution)}")
-      cond do
-        error != nil && error != "" ->
-          Logger.error("MiniZinc error: #{inspect(error)}")
-          # Error is already formatted by build_error_message, but ensure it's a string
-          error_msg = if is_binary(error), do: error, else: inspect(error)
-          {:error, error_msg}
-
-        status in ["UNSATISFIABLE", "UNSAT"] ->
-        # UNSATISFIABLE is a valid result - the problem has no solution
-        # Use string keys for JSON compatibility
-        Logger.info("Problem is unsatisfiable (status: #{inspect(status)})")
-        {:ok, %{"status" => status, "message" => "Problem is unsatisfiable - no solution exists"}}
-
-        status == "OPTIMAL_SOLUTION" or status == "SATISFIED" ->
-          if map_size(solution) > 0 do
-            {:ok, solution}
-          else
+          status in ["UNSATISFIABLE", "UNSAT"] ->
+            # UNSATISFIABLE is a valid result - the problem has no solution
             # Use string keys for JSON compatibility
-            {:ok, %{"status" => status}}
-          end
+            Logger.info("Problem is unsatisfiable (status: #{inspect(status)})")
 
-        map_size(solution) > 0 ->
-          {:ok, solution}
+            {:ok,
+             %{"status" => status, "message" => "Problem is unsatisfiable - no solution exists"}}
 
-        status != nil ->
-          # We have a status but no solution - return it as success with status
-          # Use string keys for JSON compatibility
-          Logger.info(
-            "No solution found. Status: #{inspect(status)}, Solution map: #{inspect(solution)}"
-          )
+          status == "OPTIMAL_SOLUTION" or status == "SATISFIED" ->
+            if map_size(solution) > 0 do
+              {:ok, solution}
+            else
+              # Use string keys for JSON compatibility
+              {:ok, %{"status" => status}}
+            end
 
-          {:ok, %{"status" => status, "solution" => solution}}
+          map_size(solution) > 0 ->
+            {:ok, solution}
 
-        true ->
-          # If we have no solution and no clear status, check for plain text errors
-          # before returning generic error message
-          plain_text_error = extract_error_from_raw_output(output_str)
-          
-          if plain_text_error != "" and plain_text_error != nil do
-            {:error, plain_text_error}
-          else
-            Logger.warning(
-              "No solution found and no clear status. Solution map: #{inspect(solution)}, Status: #{inspect(status)}, Error: #{inspect(error)}"
+          status != nil ->
+            # We have a status but no solution - return it as success with status
+            # Use string keys for JSON compatibility
+            Logger.info(
+              "No solution found. Status: #{inspect(status)}, Solution map: #{inspect(solution)}"
             )
-            {:error, "No solution found. Status: #{inspect(status)}"}
-          end
+
+            {:ok, %{"status" => status, "solution" => solution}}
+
+          true ->
+            # If we have no solution and no clear status, check for plain text errors
+            # before returning generic error message
+            plain_text_error = extract_error_from_raw_output(output_str)
+
+            if plain_text_error != "" and plain_text_error != nil do
+              {:error, plain_text_error}
+            else
+              Logger.warning(
+                "No solution found and no clear status. Solution map: #{inspect(solution)}, Status: #{inspect(status)}, Error: #{inspect(error)}"
+              )
+
+              {:error, "No solution found. Status: #{inspect(status)}"}
+            end
+        end
       end
-    end
     end
   end
 
@@ -781,17 +812,17 @@ defmodule MiniZincMcp.Solver do
     message = Map.get(error_json, "message", "")
     what = Map.get(error_json, "what", "")
     location = Map.get(error_json, "location", %{})
-    
+
     # Build location string if available
     location_str = build_location_string(location)
-    
+
     # Build comprehensive error message as plain string (not JSON)
     parts = []
-    
+
     parts = if what != "", do: ["Error type: #{what}" | parts], else: parts
     parts = if message != "", do: ["Message: #{message}" | parts], else: parts
     parts = if location_str != "", do: ["Location: #{location_str}" | parts], else: parts
-    
+
     # If we have parts, join them as plain string; otherwise return a simple error message
     if parts != [] do
       Enum.join(Enum.reverse(parts), "\n")
@@ -806,6 +837,7 @@ defmodule MiniZincMcp.Solver do
     case Jason.decode(error) do
       {:ok, error_json} when is_map(error_json) ->
         build_error_message(error_json)
+
       _ ->
         error
     end
@@ -819,22 +851,26 @@ defmodule MiniZincMcp.Solver do
     first_column = Map.get(location, "firstColumn")
     last_line = Map.get(location, "lastLine")
     last_column = Map.get(location, "lastColumn")
-    
+
     location_parts = []
     location_parts = if filename != "", do: [filename | location_parts], else: location_parts
-    
+
     if first_line != nil do
       line_col_str = "line #{first_line}"
-      line_col_str = if first_column != nil, do: "#{line_col_str}, column #{first_column}", else: line_col_str
-      
+
+      line_col_str =
+        if first_column != nil, do: "#{line_col_str}, column #{first_column}", else: line_col_str
+
       if last_line != nil and last_line != first_line do
         line_col_str = "#{line_col_str} to line #{last_line}"
-        line_col_str = if last_column != nil, do: "#{line_col_str}, column #{last_column}", else: line_col_str
+
+        line_col_str =
+          if last_column != nil, do: "#{line_col_str}, column #{last_column}", else: line_col_str
       end
-      
+
       location_parts = [line_col_str | location_parts]
     end
-    
+
     if location_parts != [] do
       Enum.join(Enum.reverse(location_parts), " at ")
     else
@@ -848,38 +884,42 @@ defmodule MiniZincMcp.Solver do
     # Without --json-stream, MiniZinc outputs plain text errors, not JSON
     # Format: /path/to/file.mzn:line.column:\ncode\n^\nError: message
     # Try to extract and format plain text errors
-    
+
     lines = String.split(output, "\n") |> Enum.filter(&(&1 != ""))
-    
+
     # Look for error patterns in plain text output
-    error_lines = 
+    error_lines =
       Enum.reduce(lines, [], fn line, acc ->
         cond do
           # Match "Error: ..." pattern
           String.starts_with?(line, "Error:") ->
             [String.trim_leading(line, "Error:") |> String.trim() | acc]
+
           # Match "error: ..." pattern (lowercase)
           String.starts_with?(String.downcase(line), "error:") ->
             error_msg = line |> String.split(":", parts: 2) |> List.last() |> String.trim()
             [error_msg | acc]
+
           # Match file location pattern (filename:line.column:)
           String.contains?(line, ":") and Regex.match?(~r/\.mzn:\d+\.\d+:/, line) ->
             # This is a location line, keep it for context
             acc
+
           true ->
             acc
         end
       end)
-    
+
     # If we found error messages, format them
     if error_lines != [] do
       # Get location context if available
-      location_line = Enum.find(lines, fn line -> 
-        String.contains?(line, ".mzn:") and Regex.match?(~r/\.mzn:\d+\.\d+:/, line)
-      end)
-      
+      location_line =
+        Enum.find(lines, fn line ->
+          String.contains?(line, ".mzn:") and Regex.match?(~r/\.mzn:\d+\.\d+:/, line)
+        end)
+
       error_msg = Enum.join(Enum.reverse(error_lines), "\n")
-      
+
       if location_line != nil do
         "#{location_line}\n#{error_msg}"
       else
@@ -889,17 +929,19 @@ defmodule MiniZincMcp.Solver do
       # Fallback: try to find JSON errors (for backwards compatibility)
       # This handles cases where JSON might still be present
       json_objects = extract_json_objects_from_text(output)
-      
-      result = Enum.reduce(json_objects, "", fn json_str, acc ->
-        case Jason.decode(json_str) do
-          {:ok, %{"type" => "error"} = error_json} ->
-            error_msg = build_error_message(error_json)
-            if acc == "", do: error_msg, else: acc <> "\n\n" <> error_msg
-          _ ->
-            acc
-        end
-      end)
-      
+
+      result =
+        Enum.reduce(json_objects, "", fn json_str, acc ->
+          case Jason.decode(json_str) do
+            {:ok, %{"type" => "error"} = error_json} ->
+              error_msg = build_error_message(error_json)
+              if acc == "", do: error_msg, else: acc <> "\n\n" <> error_msg
+
+            _ ->
+              acc
+          end
+        end)
+
       # Always return a string (empty string if no error found)
       result
     end
@@ -912,33 +954,32 @@ defmodule MiniZincMcp.Solver do
   end
 
   defp find_json_objects(<<>>, _, _, acc), do: Enum.reverse(acc)
-  
+
   defp find_json_objects(<<"{", rest::binary>>, depth, current, acc) do
     # Found opening brace, start tracking
     find_json_objects(rest, depth + 1, ["{" | current], acc)
   end
-  
+
   defp find_json_objects(<<"}", rest::binary>>, 1, current, acc) do
     # Found matching closing brace for depth 1, extract JSON string
     json_str = Enum.reverse(["}" | current]) |> Enum.join("")
     find_json_objects(rest, 0, [], [json_str | acc])
   end
-  
+
   defp find_json_objects(<<"}", rest::binary>>, depth, current, acc) when depth > 1 do
     # Found closing brace but not at depth 1, continue tracking
     find_json_objects(rest, depth - 1, ["}" | current], acc)
   end
-  
+
   defp find_json_objects(<<char, rest::binary>>, depth, current, acc) when depth > 0 do
     # Inside a JSON object, continue tracking
     find_json_objects(rest, depth, [<<char>> | current], acc)
   end
-  
+
   defp find_json_objects(<<_char, rest::binary>>, 0, _current, acc) do
     # Not inside a JSON object, skip
     find_json_objects(rest, 0, [], acc)
   end
-
 
   defp extract_json_lines_from_text(text) do
     # Extract complete JSON objects from text using parser (no regex)
@@ -1151,6 +1192,7 @@ defmodule MiniZincMcp.Solver do
           |> String.split(",")
           |> Enum.map(&String.trim/1)
           |> List.first()
+
         _ ->
           nil
       end

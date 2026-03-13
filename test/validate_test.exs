@@ -186,12 +186,12 @@ defmodule ValidateTest do
         assert length(result["errors"]) > 0
         # Should contain error about 'array' being reserved
         error_text = Enum.join(result["errors"], " ")
-        assert String.contains?(error_text, "array") or 
-               String.contains?(error_text, "syntax error")
+
+        assert String.contains?(error_text, "array") or
+                 String.contains?(error_text, "syntax error")
 
       {:error, reason} ->
         flunk("Validation should return errors, not fail: #{reason}")
     end
   end
 end
-
