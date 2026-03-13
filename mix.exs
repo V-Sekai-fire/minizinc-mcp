@@ -43,7 +43,7 @@ defmodule MiniZincMcp.MixProject do
       {:jason, "~> 1.4"},
       {:plug_cowboy, "~> 2.7"},
       {:briefly, "~> 0.4"},
-      {:dialyxir, "~> 1.4.6", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

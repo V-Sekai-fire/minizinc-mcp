@@ -250,7 +250,7 @@ defmodule MiniZincMcp.Solver do
     end
   end
 
-  defp validate_model_file(model_file, data_file \\ nil) do
+  defp validate_model_file(model_file, data_file) do
     # Use --model-check-only flag to validate without solving
     cmd_args = [
       "--model-check-only",
@@ -477,7 +477,7 @@ defmodule MiniZincMcp.Solver do
                   # Check status in result
                   case Map.get(result, "status") do
                     nil -> {:ok, result}
-                    status -> {:ok, result}
+                    _status -> {:ok, result}
                   end
 
                 _ ->
@@ -550,9 +550,7 @@ defmodule MiniZincMcp.Solver do
 
   defp add_solver_options(args, _), do: args
 
-  defp cleanup_file(nil), do: :ok
-
-  defp cleanup_file(file_path) do
+  defp cleanup_file(file_path) when is_binary(file_path) do
     if File.exists?(file_path) do
       File.rm(file_path)
       Logger.debug("Cleaned up temporary file: #{file_path}")
@@ -560,6 +558,8 @@ defmodule MiniZincMcp.Solver do
   rescue
     e -> Logger.warning("Failed to cleanup file #{file_path}: #{inspect(e)}")
   end
+
+  defp cleanup_file(_), do: :ok
 
   defp parse_output(output) do
     # Parse MiniZinc output (JSON, DZN format, or plain text errors)
@@ -855,21 +855,25 @@ defmodule MiniZincMcp.Solver do
     location_parts = []
     location_parts = if filename != "", do: [filename | location_parts], else: location_parts
 
-    if first_line != nil do
-      line_col_str = "line #{first_line}"
-
-      line_col_str =
-        if first_column != nil, do: "#{line_col_str}, column #{first_column}", else: line_col_str
-
-      if last_line != nil and last_line != first_line do
-        line_col_str = "#{line_col_str} to line #{last_line}"
+    location_parts =
+      if first_line != nil do
+        line_col_str = "line #{first_line}"
 
         line_col_str =
-          if last_column != nil, do: "#{line_col_str}, column #{last_column}", else: line_col_str
-      end
+          if first_column != nil, do: "#{line_col_str}, column #{first_column}", else: line_col_str
 
-      location_parts = [line_col_str | location_parts]
-    end
+        line_col_str =
+          if last_line != nil and last_line != first_line do
+            extended = "#{line_col_str} to line #{last_line}"
+            if last_column != nil, do: "#{extended}, column #{last_column}", else: extended
+          else
+            line_col_str
+          end
+
+        [line_col_str | location_parts]
+      else
+        location_parts
+      end
 
     if location_parts != [] do
       Enum.join(Enum.reverse(location_parts), " at ")
@@ -979,13 +983,6 @@ defmodule MiniZincMcp.Solver do
   defp find_json_objects(<<_char, rest::binary>>, 0, _current, acc) do
     # Not inside a JSON object, skip
     find_json_objects(rest, 0, [], acc)
-  end
-
-  defp extract_json_lines_from_text(text) do
-    # Extract complete JSON objects from text using parser (no regex)
-    # Look for { and } pairs to find JSON boundaries
-    extract_json_objects_from_text(text)
-    |> Enum.map(fn json_str -> json_str end)
   end
 
   defp extract_dzn_output(%{"dzn" => text}) when is_binary(text), do: text
