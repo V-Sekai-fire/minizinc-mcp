@@ -66,6 +66,18 @@ RUN cd /tmp && \
     rm -rf minizinc.tar.gz MiniZincIDE* && \
     /opt/minizinc/bin/minizinc --version
 
+# Install HiGHS solver binary (LP/MIP; required for --solver highs)
+# MiniZinc bundle includes the solver definition but not the binary; put highs in PATH for minizinc to find it
+ARG HIGHS_VERSION=1.13.1
+RUN cd /tmp && \
+    curl -Lf "https://github.com/ERGO-Code/HiGHS/releases/download/v${HIGHS_VERSION}/highs-${HIGHS_VERSION}-x86_64-linux-gnu-static-mit.tar.gz" -o highs.tar.gz && \
+    tar -xzf highs.tar.gz && \
+    HIGHS_DIR=$(find . -maxdepth 1 -type d -name 'highs-*' | head -1) && \
+    cp "$HIGHS_DIR/bin/highs" /opt/minizinc/bin/highs && \
+    chmod +x /opt/minizinc/bin/highs && \
+    rm -rf highs.tar.gz highs-* && \
+    /opt/minizinc/bin/highs --version || true
+
 ENV PATH="/opt/minizinc/bin:${PATH}"
 
 # Copy dependency files
