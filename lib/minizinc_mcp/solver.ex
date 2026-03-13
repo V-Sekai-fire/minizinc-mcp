@@ -31,7 +31,7 @@ defmodule MiniZincMcp.Solver do
   require Logger
 
   @doc """
-  Solves a MiniZinc model file using the minizinc command-line tool with chuffed solver.
+  Solves a MiniZinc model file using the minizinc command-line tool with HiGHS solver.
 
   ## Parameters
 
@@ -41,7 +41,7 @@ defmodule MiniZincMcp.Solver do
     - `:timeout` - Optional timeout in milliseconds (default: :infinity, no timeout)
     - `:solver_options` - Additional solver options
 
-  Note: Only chuffed solver is supported.
+  Note: HiGHS is used (LP/MIP solver; supports continuous/float variables).
 
   ## Returns
 
@@ -55,8 +55,8 @@ defmodule MiniZincMcp.Solver do
   """
   @spec solve(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
   def solve(model_path, data_path \\ nil, opts \\ []) do
-    # Only support chuffed solver
-    solver = "chuffed"
+    # HiGHS: LP/MIP solver with float/continuous support
+    solver = "highs"
     timeout = Keyword.get(opts, :timeout, :infinity)
     solver_options = Keyword.get(opts, :solver_options, [])
 
@@ -254,7 +254,7 @@ defmodule MiniZincMcp.Solver do
     # Use --model-check-only flag to validate without solving
     cmd_args = [
       "--model-check-only",
-      "--solver", "chuffed",
+      "--solver", "highs",
       model_file
     ]
     
@@ -1136,18 +1136,27 @@ defmodule MiniZincMcp.Solver do
   end
 
   defp parse_solver_list(output) do
-    # Parse solver list from minizinc --solvers output
+    # Parse "minizinc --solvers" output. Solver lines look like:
+    #   HiGHS <unknown version> (org.minizinc.mip.highs, mip, float, api, highs)
+    # Extract the canonical solver id (first tag in parentheses) for each config.
     output
     |> String.split("\n")
     |> Enum.filter(fn line ->
-      String.contains?(line, ":") and not String.starts_with?(line, " ")
+      line =~ ~r/\s+\([^)]+\)/ and String.trim(line) != ""
     end)
     |> Enum.map(fn line ->
-      line
-      |> String.split(":")
-      |> List.first()
-      |> String.trim()
+      case Regex.run(~r/\(([^)]+)\)/, line) do
+        [_, tags] ->
+          tags
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> List.first()
+        _ ->
+          nil
+      end
     end)
+    |> Enum.reject(&is_nil/1)
     |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
   end
 end

@@ -3,34 +3,11 @@
 
 defmodule MiniZincMcp.NativeService do
   @moduledoc """
-  Native BEAM service for MiniZinc MCP using ex_mcp library.
-  Provides MiniZinc constraint programming tools via MCP protocol.
-
-  This server provides tools for:
-  - Solving MiniZinc models (using chuffed solver only)
-
-  ## Input Format
-
-  Models and data are provided as strings (model_content and data_content).
-
-  ## Output Format
-
-  **Solution Output:**
-  - **DZN format**: When available, variables are parsed from DZN format and returned as structured data
-  - **Output text**: Explicit `output` statements are passthrough'd in the `output_text` field
-  - **Both**: When both formats are available, both are included in the response
-
-  Only DZN format is parsed for variable extraction. Output text from explicit `output` statements
-  is always included when available, even if DZN format is not present.
+  MiniZinc MCP tool execution and tool list (no deftool DSL).
+  Runs as a named GenServer; MCPHandler calls get_tools/0 and GenServer.call(..., :execute_tool) over HTTP streaming.
   """
 
-  # Suppress warnings from ex_mcp DSL generated code
-  @compile {:no_warn_undefined, :no_warn_pattern}
-
-  use ExMCP.Server,
-    name: "MiniZinc MCP Server",
-    version: "1.0.0"
-
+  use GenServer
   alias MiniZincMcp.Solver
 
   @spec child_spec(term()) :: Supervisor.child_spec()
@@ -44,163 +21,136 @@ defmodule MiniZincMcp.NativeService do
     }
   end
 
-  # Override do_start_link to start without name when no name is provided
-  # This prevents conflicts when ExMCP.MessageProcessor starts temporary instances
-  # MessageProcessor now handles :already_started gracefully
-  defp do_start_link(:native, opts) do
+  def start_link(opts \\ []) do
     name = Keyword.get(opts, :name)
-
-    # Only register name if explicitly provided
-    # When ExMCP.MessageProcessor calls start_link([]), no name is provided,
-    # so we start without name registration to avoid conflicts
     genserver_opts = if name, do: [name: name], else: []
-
     GenServer.start_link(__MODULE__, opts, genserver_opts)
   end
 
-  # Define MiniZinc tools using ex_mcp DSL
+  # Tool list: map of name => %{name, description, input_schema}. Used by MCPHandler.
+  @doc false
+  def get_tools do
+    %{
+      "minizinc_solve" => %{
+        name: "minizinc_solve",
+        description: """
+        Solves a MiniZinc model using HiGHS solver (LP/MIP; supports continuous/float variables).
 
-  deftool "minizinc_solve" do
-    meta do
-      name("Solve MiniZinc Model")
+        Standard libraries: By default, automatically includes common MiniZinc standard libraries (e.g., alldifferent.mzn)
+        if not already present in the model. This can be controlled via the auto_include_stdlib parameter (default: true).
+        This allows models to use standard functions without explicit includes.
 
-      description("""
-      Solves a MiniZinc model using chuffed solver (fixed, not configurable).
+        Output format:
+        - DZN format: Variables are parsed from DZN format when available (models without explicit output statements)
+        - Output text: Explicit output statements are passthrough'd in output_text field
+        - Both formats are included when available
+        """,
+        input_schema: %{
+          "type" => "object",
+          "properties" => %{
+            "model_content" => %{
+              "type" => "string",
+              "description" => "MiniZinc model content (.mzn) as string"
+            },
+            "data_content" => %{
+              "type" => "string",
+              "description" =>
+                "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;'). Parsed and included in response."
+            },
+            "timeout" => %{
+              "type" => "integer",
+              "description" =>
+                "Optional timeout in milliseconds (default: 30000, i.e., 30 seconds). Maximum allowed is 30000 ms (30 seconds); values exceeding this will be capped at 30 seconds."
+            },
+            "auto_include_stdlib" => %{
+              "type" => "boolean",
+              "description" =>
+                "Automatically include standard MiniZinc libraries (e.g., alldifferent.mzn) if not present (default: true)",
+              "default" => true
+            }
+          }
+        }
+      },
+      "minizinc_validate" => %{
+        name: "minizinc_validate",
+        description: """
+        Validates a MiniZinc model by checking syntax and type checking without solving.
+        Useful for debugging models before attempting to solve them.
 
-      Standard libraries: By default, automatically includes common MiniZinc standard libraries (e.g., alldifferent.mzn) 
-      if not already present in the model. This can be controlled via the auto_include_stdlib parameter (default: true).
-      This allows models to use standard functions without explicit includes.
-
-      Output format:
-      - DZN format: Variables are parsed from DZN format when available (models without explicit output statements)
-      - Output text: Explicit output statements are passthrough'd in output_text field
-      - Both formats are included when available
-      """)
-    end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        model_content: %{
-          type: "string",
-          description: "MiniZinc model content (.mzn) as string"
-        },
-        data_content: %{
-          type: "string",
-          description:
-            "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;'). Parsed and included in response."
-        },
-        timeout: %{
-          type: "integer",
-          description: "Optional timeout in milliseconds (default: 30000, i.e., 30 seconds). Maximum allowed is 30000 ms (30 seconds); values exceeding this will be capped at 30 seconds."
-        },
-        auto_include_stdlib: %{
-          type: "boolean",
-          description:
-            "Automatically include standard MiniZinc libraries (e.g., alldifferent.mzn) if not present (default: true)",
-          default: true
+        Returns detailed error and warning messages if the model is invalid.
+        """,
+        input_schema: %{
+          "type" => "object",
+          "properties" => %{
+            "model_content" => %{
+              "type" => "string",
+              "description" => "MiniZinc model content (.mzn) as string"
+            },
+            "data_content" => %{
+              "type" => "string",
+              "description" =>
+                "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;')."
+            },
+            "auto_include_stdlib" => %{
+              "type" => "boolean",
+              "description" =>
+                "Automatically include standard MiniZinc libraries (e.g., alldifferent.mzn) if not present (default: true)",
+              "default" => true
+            }
+          }
+        }
+      },
+      "minizinc_list_solvers" => %{
+        name: "minizinc_list_solvers",
+        description: """
+        Lists solvers available on this system (e.g. highs, gecode).
+        Run this to see which solvers are installed before solving.
+        """,
+        input_schema: %{
+          "type" => "object",
+          "properties" => %{},
+          "required" => []
         }
       }
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: false
-    })
+    }
   end
 
-  deftool "minizinc_validate" do
-    meta do
-      name("Validate MiniZinc Model")
+  # GenServer
+  @impl true
+  def init(_opts) do
+    {:ok, %{}}
+  end
 
-      description("""
-      Validates a MiniZinc model by checking syntax and type checking without solving.
-      Useful for debugging models before attempting to solve them.
-      
-      Returns detailed error and warning messages if the model is invalid.
-      """)
+  @impl true
+  def handle_call({:execute_tool, tool_name, arguments}, _from, state) do
+    case handle_tool_call(tool_name, arguments, state) do
+      {:ok, result, new_state} -> {:reply, {:ok, result}, new_state}
+      {:error, reason, new_state} -> {:reply, {:error, reason}, new_state}
     end
-
-    input_schema(%{
-      type: "object",
-      properties: %{
-        model_content: %{
-          type: "string",
-          description: "MiniZinc model content (.mzn) as string"
-        },
-        data_content: %{
-          type: "string",
-          description:
-            "Optional .dzn data content as string. Must be valid DZN format (e.g., 'n = 8;')."
-        },
-        auto_include_stdlib: %{
-          type: "boolean",
-          description:
-            "Automatically include standard MiniZinc libraries (e.g., alldifferent.mzn) if not present (default: true)",
-          default: true
-        }
-      }
-    })
-
-    tool_annotations(%{
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true
-    })
   end
 
-  # Initialize handler
-  @impl true
-  def handle_initialize(params, state) do
-    {:ok,
-     %{
-       protocolVersion: Map.get(params, "protocolVersion", "2025-06-18"),
-       serverInfo: %{
-         name: "MiniZinc MCP Server",
-         version: "1.0.0"
-       },
-       capabilities: %{
-         tools: %{},
-         resources: %{},
-         prompts: %{}
-       }
-     }, state}
-  end
-
-  # Tool call handlers
-  @impl true
+  # Called by GenServer for HTTP tool execution.
   def handle_tool_call(tool_name, args, state) do
     case tool_name do
-      "minizinc_solve" ->
-        handle_solve(args, state)
-
-      "minizinc_validate" ->
-        handle_validate(args, state)
-
-      _ ->
-        {:error, "Tool not found: #{tool_name}", state}
+      "minizinc_solve" -> handle_solve(args, state)
+      "minizinc_validate" -> handle_validate(args, state)
+      "minizinc_list_solvers" -> handle_list_solvers(state)
+      _ -> {:error, "Tool not found: #{tool_name}", state}
     end
   end
 
   defp handle_solve(args, state) do
-    # Ensure args is a map
     args = if is_map(args), do: args, else: %{}
-
     model_content = Map.get(args, "model_content")
     data_content = Map.get(args, "data_content")
-    # Only allow chuffed solver (ignore user input)
-    solver = "chuffed"
-    # Enforce maximum timeout of 30 seconds (30,000 ms)
+    solver = "highs"
     timeout = min(Map.get(args, "timeout", 30_000), 30_000)
     auto_include_stdlib = Map.get(args, "auto_include_stdlib", true)
-
     opts = [solver: solver, timeout: timeout, auto_include_stdlib: auto_include_stdlib]
 
     try do
       result =
         if model_content && model_content != "" do
-          # Solve from string content
           Solver.solve_string(model_content, data_content, opts)
         else
           {:error, "model_content must be provided"}
@@ -208,43 +158,23 @@ defmodule MiniZincMcp.NativeService do
 
       case result do
         {:ok, solution} ->
-          # Ensure all keys are strings for JSON encoding
-          # Recursively convert atom keys to strings
           solution_map = normalize_for_json(solution)
-          
-          # Encode to JSON, handling encoding errors gracefully
           case Jason.encode(solution_map) do
             {:ok, solution_json} ->
-              # Create content item with string keys for JSON compatibility
               content_item = %{"type" => "text", "text" => solution_json}
-              response = %{"content" => [content_item]}
-              {:ok, response, state}
-              
+              {:ok, %{"content" => [content_item], "isError" => false}, state}
             {:error, encode_error} ->
-              # If JSON encoding fails, return error instead of crashing
-              error_msg = "Failed to encode solution to JSON: #{inspect(encode_error)}"
-              {:error, error_msg, state}
+              {:error, "Failed to encode solution to JSON: #{inspect(encode_error)}", state}
           end
 
         {:error, reason} ->
-          # Preserve full error message from solver
-          # ex_mcp uses inspect() which will double-encode if reason contains JSON
-          # Ensure reason is a plain string (not JSON) to avoid double encoding
           error_msg = if is_binary(reason), do: reason, else: to_string(reason)
-          # If error_msg looks like it contains JSON, try to extract and format it properly
-          # to avoid double encoding when ex_mcp calls inspect() on it
-          # ex_mcp uses inspect() which will quote strings, so we need plain text, not JSON
-          final_error_msg = 
-            if String.contains?(error_msg, "\"type\": \"error\"") or 
-               String.contains?(error_msg, "{\"type\":\"error\"") or
-               String.contains?(error_msg, "\"type\":\"error\"") do
-              # Error message contains raw JSON, extract and format it as plain string
+          final_error_msg =
+            if String.contains?(error_msg, "\"type\": \"error\"") or
+                 String.contains?(error_msg, "{\"type\":\"error\"") do
               case extract_and_format_error_from_string(error_msg) do
                 formatted when is_binary(formatted) and formatted != "" -> formatted
-                _ -> 
-                  # Fallback: try to extract from the raw output that might be embedded
-                  # Look for the actual error JSON and format it
-                  extract_error_from_error_message(error_msg)
+                _ -> extract_error_from_error_message(error_msg)
               end
             else
               error_msg
@@ -252,36 +182,23 @@ defmodule MiniZincMcp.NativeService do
           {:error, final_error_msg, state}
       end
     rescue
-      e ->
-        # Catch any unexpected exceptions and return as error message
-        error_msg = "MiniZinc solve error: #{inspect(e)}"
-        {:error, error_msg, state}
+      e -> {:error, "MiniZinc solve error: #{inspect(e)}", state}
     catch
-      :exit, reason ->
-        # Catch exit signals and return as error message
-        error_msg = "MiniZinc solve exited: #{inspect(reason)}"
-        {:error, error_msg, state}
-      kind, reason ->
-        # Catch any other thrown values
-        error_msg = "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}"
-        {:error, error_msg, state}
+      :exit, reason -> {:error, "MiniZinc solve exited: #{inspect(reason)}", state}
+      kind, reason -> {:error, "MiniZinc solve error (#{inspect(kind)}): #{inspect(reason)}", state}
     end
   end
 
   defp handle_validate(args, state) do
-    # Ensure args is a map
     args = if is_map(args), do: args, else: %{}
-
     model_content = Map.get(args, "model_content")
     data_content = Map.get(args, "data_content")
     auto_include_stdlib = Map.get(args, "auto_include_stdlib", true)
-
     opts = [auto_include_stdlib: auto_include_stdlib]
 
     try do
       result =
         if model_content && model_content != "" do
-          # Validate from string content
           Solver.validate_string(model_content, data_content, opts)
         else
           {:error, "model_content must be provided"}
@@ -289,77 +206,60 @@ defmodule MiniZincMcp.NativeService do
 
       case result do
         {:ok, validation_result} ->
-          # Ensure all keys are strings for JSON encoding
           validation_map = normalize_for_json(validation_result)
-          
-          # Encode to JSON
           case Jason.encode(validation_map) do
             {:ok, validation_json} ->
               content_item = %{"type" => "text", "text" => validation_json}
-              response = %{"content" => [content_item]}
-              {:ok, response, state}
-              
+              {:ok, %{"content" => [content_item], "isError" => false}, state}
             {:error, encode_error} ->
-              error_msg = "Failed to encode validation result to JSON: #{inspect(encode_error)}"
-              {:error, error_msg, state}
+              {:error, "Failed to encode validation result to JSON: #{inspect(encode_error)}", state}
           end
-
         {:error, reason} ->
           error_msg = if is_binary(reason), do: reason, else: to_string(reason)
           {:error, error_msg, state}
       end
     rescue
-      e ->
-        error_msg = "MiniZinc validate error: #{inspect(e)}"
-        {:error, error_msg, state}
+      e -> {:error, "MiniZinc validate error: #{inspect(e)}", state}
     catch
-      :exit, reason ->
-        error_msg = "MiniZinc validate exited: #{inspect(reason)}"
-        {:error, error_msg, state}
-      kind, reason ->
-        error_msg = "MiniZinc validate error (#{inspect(kind)}): #{inspect(reason)}"
-        {:error, error_msg, state}
+      :exit, reason -> {:error, "MiniZinc validate exited: #{inspect(reason)}", state}
+      kind, reason -> {:error, "MiniZinc validate error (#{inspect(kind)}): #{inspect(reason)}", state}
     end
   end
 
-  # Recursively convert atom keys to strings for JSON encoding
+  defp handle_list_solvers(state) do
+    case Solver.list_solvers() do
+      {:ok, solvers} ->
+        body = Jason.encode!(%{"solvers" => solvers})
+        content = %{"type" => "text", "text" => body}
+        {:ok, %{"content" => [content], "isError" => false}, state}
+      {:error, reason} ->
+        msg = if is_binary(reason), do: reason, else: inspect(reason)
+        {:error, msg, state}
+    end
+  end
+
   defp normalize_for_json(value) when is_map(value) do
     Enum.reduce(value, %{}, fn
-      {k, v}, acc when is_atom(k) ->
-        Map.put(acc, Atom.to_string(k), normalize_for_json(v))
-
-      {k, v}, acc ->
-        Map.put(acc, k, normalize_for_json(v))
+      {k, v}, acc when is_atom(k) -> Map.put(acc, Atom.to_string(k), normalize_for_json(v))
+      {k, v}, acc -> Map.put(acc, k, normalize_for_json(v))
     end)
   end
 
-  defp normalize_for_json(value) when is_list(value) do
-    Enum.map(value, &normalize_for_json/1)
-  end
-
+  defp normalize_for_json(value) when is_list(value), do: Enum.map(value, &normalize_for_json/1)
   defp normalize_for_json(value), do: value
 
-  # Extract and format error from string that may contain JSON
-  # Decode JSON into Elixir terms, then format as plain string (not JSON)
   defp extract_and_format_error_from_string(error_str) when is_binary(error_str) do
-    # Try to find JSON error objects in the string using parser (no regex)
-    alias MiniZincMcp.Solver
-    
-    # First try to parse the entire string as JSON
     case Jason.decode(error_str) do
       {:ok, %{"type" => "error"} = error_json} ->
         Solver.build_error_message(error_json)
       _ ->
-        # Try to extract JSON objects from the string
         json_objects = extract_json_objects_from_string(error_str)
-        
         Enum.reduce(json_objects, "", fn json_str, acc ->
           case Jason.decode(json_str) do
             {:ok, %{"type" => "error"} = error_json} ->
-              error_msg = Solver.build_error_message(error_json)
-              if acc == "", do: error_msg, else: acc <> "\n\n" <> error_msg
-            _ ->
-              acc
+              msg = Solver.build_error_message(error_json)
+              if acc == "", do: msg, else: acc <> "\n\n" <> msg
+            _ -> acc
           end
         end)
     end
@@ -367,59 +267,45 @@ defmodule MiniZincMcp.NativeService do
 
   defp extract_and_format_error_from_string(_), do: nil
 
-  # Fallback: extract error from error message string that contains JSON
   defp extract_error_from_error_message(error_msg) when is_binary(error_msg) do
-    # The error message might contain escaped JSON (from inspect() or similar)
-    # Try to extract JSON objects from the error message
     json_objects = extract_json_objects_from_string(error_msg)
-    
-    # Try to find error JSON and format it
-    result = Enum.reduce(json_objects, nil, fn json_str, acc ->
-      case Jason.decode(json_str) do
-        {:ok, %{"type" => "error"} = error_json} ->
-          # Found error JSON, format it as plain string
-          alias MiniZincMcp.Solver
-          formatted = Solver.build_error_message(error_json)
-          if formatted != "" and formatted != nil, do: formatted, else: acc
-        _ ->
-          acc
-      end
-    end)
-    
-    # If we found a formatted error, return it; otherwise return original
-    if result != nil and result != "" do
-      result
-    else
-      error_msg
-    end
+    result =
+      Enum.reduce(json_objects, nil, fn json_str, acc ->
+        case Jason.decode(json_str) do
+          {:ok, %{"type" => "error"} = error_json} ->
+            formatted = Solver.build_error_message(error_json)
+            if formatted != "" and formatted != nil, do: formatted, else: acc
+          _ -> acc
+        end
+      end)
+    if result != nil and result != "", do: result, else: error_msg
   end
 
   defp extract_error_from_error_message(_), do: nil
 
-  # Extract JSON objects from string using parser (no regex)
   defp extract_json_objects_from_string(text) when is_binary(text) do
     find_json_objects_in_string(text, 0, [], [])
   end
 
   defp find_json_objects_in_string(<<>>, _, _, acc), do: Enum.reverse(acc)
-  
+
   defp find_json_objects_in_string(<<"{", rest::binary>>, depth, current, acc) do
     find_json_objects_in_string(rest, depth + 1, ["{" | current], acc)
   end
-  
+
   defp find_json_objects_in_string(<<"}", rest::binary>>, 1, current, acc) do
     json_str = Enum.reverse(["}" | current]) |> Enum.join("")
     find_json_objects_in_string(rest, 0, [], [json_str | acc])
   end
-  
+
   defp find_json_objects_in_string(<<"}", rest::binary>>, depth, current, acc) when depth > 1 do
     find_json_objects_in_string(rest, depth - 1, ["}" | current], acc)
   end
-  
+
   defp find_json_objects_in_string(<<char, rest::binary>>, depth, current, acc) when depth > 0 do
     find_json_objects_in_string(rest, depth, [<<char>> | current], acc)
   end
-  
+
   defp find_json_objects_in_string(<<_char, rest::binary>>, 0, _current, acc) do
     find_json_objects_in_string(rest, 0, [], acc)
   end

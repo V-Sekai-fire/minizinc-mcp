@@ -3,8 +3,8 @@
 
 defmodule MiniZincMcp.HttpServer do
   @moduledoc """
-  HTTP server for MiniZinc MCP using ExMCP.HttpPlug.
-  Provides HTTP transport for MCP protocol with CORS support.
+  HTTP server for MiniZinc MCP (streamableHttp).
+  Uses ExMCP.HttpPlug with SSE; CORS enabled. Point clients at this URL with transport streamableHttp.
   """
 
   require Logger
@@ -25,7 +25,7 @@ defmodule MiniZincMcp.HttpServer do
     port = get_port(opts)
     host = Keyword.get(opts, :host, "0.0.0.0")
 
-    Logger.info("Starting MiniZinc MCP HTTP server on #{host}:#{port}")
+    Logger.info("MiniZinc MCP HTTP server (streamableHttp) on #{host}:#{port}")
 
     # Use Router which adds health check endpoint and forwards to ExMCP.HttpPlug
     case Plug.Cowboy.http(MiniZincMcp.Router, [], port: port, ip: parse_host(host)) do

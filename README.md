@@ -4,7 +4,7 @@ A Model Context Protocol (MCP) server that provides MiniZinc constraint programm
 
 ## Features
 
-- Solve MiniZinc models using chuffed solver (fixed, not configurable)
+- Solve MiniZinc models using HiGHS solver (LP/MIP with float support)
 - Validate MiniZinc models for syntax and type errors without solving
 - Support for both MZN (model) and DZN (data) content as strings
 - Automatic standard library inclusion (e.g., `alldifferent.mzn`) when not present in models
@@ -73,7 +73,7 @@ The server provides the following MCP tools:
 
 ### `minizinc_solve`
 
-Solve a MiniZinc model using the chuffed solver (fixed, not configurable).
+Solve a MiniZinc model using the HiGHS solver (LP/MIP with float support).
 
 #### Parameters
 
@@ -238,18 +238,13 @@ Returns a JSON object with:
 
 **Environment Variables:**
 
-- `MCP_TRANSPORT` - Transport type (`"http"` or `"stdio"`)
 - `PORT` - HTTP server port (default: 8081)
 - `HOST` - HTTP server host (default: `0.0.0.0` if PORT set, else `localhost`)
 - `MIX_ENV` - Environment (`prod`, `dev`, `test`)
 - `ELIXIR_ERL_OPTIONS` - Erlang options (set to `"+fnu"` for UTF-8)
 - `MCP_SSE_ENABLED` - Enable/disable Server-Sent Events (default: `true`, set to `"false"` to disable)
 
-**Transport Selection:**
-
-1. If `MCP_TRANSPORT` is set, use that transport
-2. If `PORT` is set, use HTTP transport
-3. Otherwise, use STDIO transport (default)
+The server uses HTTP streaming only (no stdio transport).
 
 ## Troubleshooting
 
@@ -300,9 +295,8 @@ For STDIO transport (default):
 mix mcp.server
 ```
 
-For HTTP transport:
 ```bash
-MCP_TRANSPORT=http PORT=8081 mix run --no-halt
+PORT=8081 mix run --no-halt
 ```
 
 </details>

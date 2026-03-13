@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Mcp.Server do
 
       mix mcp.server
 
-  The server will run indefinitely, communicating via stdio for MCP protocol.
+  The server listens on HTTP (streaming). Set PORT (default 8081) and HOST. Runs until stopped.
   """
 
   use Mix.Task

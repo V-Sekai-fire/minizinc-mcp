@@ -18,9 +18,9 @@ defmodule MiniZincMcp.MixProject do
       test_coverage: [
         summary: [threshold: 70],
         ignore_modules: [
+          MiniZincMcp.MCPHandler,
           MiniZincMcp.NativeService,
           Mix.Tasks.Mcp.Server,
-          MiniZincMcp.HttpPlugWrapper,
           MiniZincMcp.HttpServer,
           MiniZincMcp.Router
         ]
@@ -39,7 +39,7 @@ defmodule MiniZincMcp.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_mcp, git: "https://github.com/fire/ex_mcp.git", branch: "master"},
+      {:ex_mcp, "~> 0.8"},
       {:jason, "~> 1.4"},
       {:plug_cowboy, "~> 2.7"},
       {:briefly, "~> 0.4"},
